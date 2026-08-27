@@ -1,0 +1,2920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MerchStudio — Visual Merchandising Editor</title>
+
+<!-- ============ CDN DEPENDENCIES ============ -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+
+<!-- Firebase (compat builds: plain script tags, no bundler, no ES modules) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script>
+  // Design tokens ------------------------------------------------------------
+  // graphite  #12161d  workspace shell      brass  #e8b44a  measurement / active
+  // slate     #1a2029  panels               mint   #3ecfb2  snapping / success
+  // hairline  #2a323e  borders              paper  #ffffff  the artboard
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          graphite: '#0e1116', shell: '#12161d', panel: '#1a2029', raise: '#222a35',
+          hairline: '#2a323e', muted: '#8592a3', chalk: '#dfe5ec',
+          brass: '#e8b44a', mint: '#3ecfb2', coral: '#ef6f6c'
+        },
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          sans: ['Inter', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace']
+        }
+      }
+    }
+  };
+</script>
+
+<style>
+  html, body { height: 100%; overflow: hidden; background: #0e1116; }
+  body { font-family: Inter, sans-serif; color: #dfe5ec; -webkit-font-smoothing: antialiased; }
+
+  /* --- scrollbars ------------------------------------------------------- */
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a323e; border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a4756; }
+
+  /* --- tool buttons ----------------------------------------------------- */
+  .tool-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 38px; height: 34px; border-radius: 9px; color: #8592a3;
+    border: 1px solid transparent; transition: all .13s ease;
+  }
+  .tool-btn:hover { background: #222a35; color: #dfe5ec; }
+  .tool-btn.active { background: rgba(232,180,74,.14); color: #e8b44a; border-color: rgba(232,180,74,.4); }
+
+  .nav-btn {
+    display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px;
+    border-radius: 9px; font-size: 12.5px; font-weight: 500; color: #b9c3d0;
+    border: 1px solid #2a323e; background: #1a2029; transition: all .13s ease; white-space: nowrap;
+  }
+  .nav-btn:hover { background: #222a35; color: #fff; border-color: #3a4756; }
+  .nav-btn:disabled { opacity: .35; cursor: not-allowed; }
+  .nav-btn.primary { background: #e8b44a; border-color: #e8b44a; color: #17202b; font-weight: 600; }
+  .nav-btn.primary:hover { background: #f2c163; }
+
+  /* --- mode switcher ---------------------------------------------------- */
+  .mode-pill { position: relative; display: flex; background: #12161d; border: 1px solid #2a323e; border-radius: 10px; padding: 3px; }
+  .mode-opt {
+    padding: 0 14px; height: 28px; display: flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 600; letter-spacing: .01em; color: #8592a3; border-radius: 7px; transition: all .15s;
+  }
+  .mode-opt.active { background: #222a35; color: #e8b44a; box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+
+  /* --- library cards ---------------------------------------------------- */
+  .lib-card {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 4px 8px; background: #12161d; border: 1px solid #232b36; border-radius: 11px;
+    cursor: grab; transition: all .14s ease; user-select: none;
+  }
+  .lib-card:hover { border-color: #e8b44a; background: #1c232d; transform: translateY(-1px); }
+  .lib-card:active { cursor: grabbing; transform: scale(.97); }
+  .lib-card svg { width: 34px; height: 34px; fill: #cfd8e3; pointer-events: none; }
+  .lib-card:hover svg { fill: #e8b44a; }
+  .lib-card span { font-size: 9.5px; line-height: 1.15; text-align: center; color: #8592a3; letter-spacing: .02em; }
+
+  /* --- side tabs (icon rail) -------------------------------------------- */
+  .rail-btn {
+    width: 46px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; color: #6f7d8e; border-left: 2px solid transparent; transition: all .14s; font-size: 8px;
+  }
+  .rail-btn i { font-size: 15px; }
+  .rail-btn:hover { color: #dfe5ec; background: #171d25; }
+  .rail-btn.active { color: #e8b44a; border-left-color: #e8b44a; background: #171d25; }
+
+  /* --- inspector fields -------------------------------------------------- */
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em; color: #6f7d8e; font-weight: 600; }
+  .input {
+    width: 100%; background: #12161d; border: 1px solid #2a323e; border-radius: 8px;
+    padding: 7px 9px; font-size: 12px; color: #dfe5ec; font-family: 'JetBrains Mono', monospace;
+    transition: border-color .12s;
+  }
+  .input:focus { outline: none; border-color: #e8b44a; }
+  select.input { font-family: Inter, sans-serif; }
+  .input-color { width: 100%; height: 32px; padding: 2px; background: #12161d; border: 1px solid #2a323e; border-radius: 8px; cursor: pointer; }
+  .mini-btn {
+    display: flex; align-items: center; justify-content: center; height: 30px; border-radius: 7px;
+    background: #12161d; border: 1px solid #2a323e; color: #b9c3d0; font-size: 12px; transition: all .12s;
+  }
+  .mini-btn:hover { background: #222a35; color: #e8b44a; border-color: #3a4756; }
+  .sec-title {
+    font-family: 'Space Grotesk', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .13em;
+    text-transform: uppercase; color: #6f7d8e; display: flex; align-items: center; gap: 8px;
+  }
+  .sec-title::after { content: ''; flex: 1; height: 1px; background: #232b36; }
+
+  /* --- rulers ------------------------------------------------------------ */
+  #rulerTop { background: #171d25; display: block; height: 22px; }
+  #rulerLeft { background: #171d25; display: block; width: 22px; height: 100%; }
+  #canvasHost .canvas-container { position: absolute !important; inset: 0; }
+  .ruler-corner { background: #171d25; border-right: 1px solid #2a323e; border-bottom: 1px solid #2a323e; }
+
+  /* --- misc --------------------------------------------------------------- */
+  .modal-wrap { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(5,7,10,.72); backdrop-filter: blur(3px); }
+  .modal-wrap.open { display: flex; }
+  .toast {
+    position: fixed; bottom: 54px; left: 50%; transform: translateX(-50%) translateY(14px);
+    background: #1a2029; border: 1px solid #2a323e; color: #dfe5ec; padding: 9px 16px; border-radius: 10px;
+    font-size: 12.5px; opacity: 0; pointer-events: none; transition: all .22s ease; z-index: 80;
+    box-shadow: 0 12px 30px rgba(0,0,0,.5);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .readout { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #e8b44a; }
+  kbd { font-family: 'JetBrains Mono', monospace; font-size: 10px; background: #12161d; border: 1px solid #2a323e; border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; color: #b9c3d0; }
+  .drop-hint { position: absolute; inset: 0; border: 2px dashed rgba(232,180,74,.7); border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity .15s; }
+  .drop-hint.on { opacity: 1; }
+  *:focus-visible { outline: 2px solid #e8b44a; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+
+<body class="h-full">
+<div class="flex flex-col h-screen w-screen bg-graphite">
+
+  <!-- ==================================================================== -->
+  <!-- TOP NAVBAR                                                            -->
+  <!-- ==================================================================== -->
+  <header class="h-14 shrink-0 bg-shell border-b border-hairline flex items-center px-3 gap-3 z-30">
+
+    <!-- brand -->
+    <div class="flex items-center gap-2.5 pr-3 mr-1 border-r border-hairline h-8">
+      <div class="w-8 h-8 rounded-lg bg-brass flex items-center justify-center text-graphite">
+        <i class="fa-solid fa-ruler-combined text-sm"></i>
+      </div>
+      <div class="leading-none">
+        <div class="font-display font-bold text-[13px] tracking-tight text-chalk">MerchStudio</div>
+        <div class="text-[9px] text-muted tracking-[.14em] uppercase mt-0.5">Rozlivka Planner</div>
+      </div>
+    </div>
+
+    <!-- project name -->
+    <input id="projectName" value="Untitled layout"
+           class="bg-panel border border-hairline rounded-lg h-9 px-3 text-[13px] w-52 focus:outline-none focus:border-brass"
+           placeholder="Project name" />
+
+    <!-- view mode switcher -->
+    <div class="mode-pill" id="modeSwitch">
+      <button class="mode-opt active" data-mode="wall"><i class="fa-solid fa-grip-lines-vertical text-[11px]"></i> Wall elevation</button>
+      <button class="mode-opt" data-mode="floor"><i class="fa-solid fa-vector-square text-[11px]"></i> Floor plan</button>
+    </div>
+
+    <!-- store tier -->
+    <select id="storeTier" class="input !w-36 !h-9" title="Store cluster / format">
+      <option value="flagship">Flagship</option>
+      <option value="standard" selected>Standard</option>
+      <option value="small">Small format</option>
+      <option value="outlet">Outlet</option>
+    </select>
+
+    <div class="flex-1"></div>
+
+    <!-- history -->
+    <div class="flex items-center gap-1 pr-3 mr-1 border-r border-hairline h-8">
+      <button id="btnUndo" class="tool-btn" title="Undo (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i></button>
+      <button id="btnRedo" class="tool-btn" title="Redo (Ctrl+Y)"><i class="fa-solid fa-rotate-right"></i></button>
+    </div>
+
+    <button id="btnNew" class="nav-btn"><i class="fa-solid fa-file-circle-plus"></i> New</button>
+    <button id="cloudPill" class="nav-btn" title="Storage status"><i class="fa-solid fa-circle-notch fa-spin text-[10px]"></i> <span id="cloudLabel">Starting…</span></button>
+    <button id="btnOpen" class="nav-btn"><i class="fa-solid fa-folder-open"></i> Projects</button>
+    <button id="btnCompliance" class="nav-btn"><i class="fa-solid fa-camera-retro"></i> Store report</button>
+    <button id="btnSave" class="nav-btn"><i class="fa-solid fa-cloud-arrow-up"></i> Save</button>
+    <button id="btnExport" class="nav-btn primary"><i class="fa-solid fa-file-image"></i> Export PNG</button>
+    <button id="btnHelp" class="tool-btn" title="Keyboard shortcuts"><i class="fa-solid fa-keyboard"></i></button>
+  </header>
+
+  <!-- ==================================================================== -->
+  <!-- BODY: rail + library | canvas | inspector                             -->
+  <!-- ==================================================================== -->
+  <div class="flex flex-1 min-h-0">
+
+    <!-- ---------------- LEFT: icon rail ---------------- -->
+    <nav class="w-[46px] shrink-0 bg-shell border-r border-hairline flex flex-col items-stretch py-1" id="railTabs">
+      <button class="rail-btn active" data-tab="collection" title="Your uploaded collection photos"><i class="fa-solid fa-camera-retro"></i>Products</button>
+      <button class="rail-btn" data-tab="apparel" title="Apparel silhouettes"><i class="fa-solid fa-shirt"></i>Apparel</button>
+      <button class="rail-btn" data-tab="footwear" title="Footwear & accessories"><i class="fa-solid fa-shoe-prints"></i>Shoes</button>
+      <button class="rail-btn" data-tab="fixtures" title="Fixtures & structure"><i class="fa-solid fa-store"></i>Fixtures</button>
+      <button class="rail-btn" data-tab="shapes" title="Shapes & lines"><i class="fa-solid fa-shapes"></i>Shapes</button>
+      <button class="rail-btn" data-tab="zones" title="Zones & signage"><i class="fa-solid fa-location-dot"></i>Zones</button>
+      <button class="rail-btn" data-tab="media" title="Text & images"><i class="fa-solid fa-image"></i>Media</button>
+      <div class="flex-1"></div>
+      <button class="rail-btn" data-tab="looks" title="Looks & SKU sets"><i class="fa-solid fa-layer-group"></i>Looks</button>
+    </nav>
+
+    <!-- ---------------- LEFT: library panel ---------------- -->
+    <aside class="w-[236px] shrink-0 bg-panel border-r border-hairline flex flex-col min-h-0">
+
+      <!-- tools strip -->
+      <div class="p-2.5 border-b border-hairline">
+        <div class="sec-title mb-2">Tools</div>
+        <div class="grid grid-cols-6 gap-1" id="toolStrip">
+          <button class="tool-btn active" data-tool="select" title="Select & transform (V)"><i class="fa-solid fa-arrow-pointer"></i></button>
+          <button class="tool-btn" data-tool="pan" title="Pan canvas (H / hold Space)"><i class="fa-solid fa-hand"></i></button>
+          <button class="tool-btn" data-tool="rect" title="Rectangle (R)"><i class="fa-regular fa-square"></i></button>
+          <button class="tool-btn" data-tool="circle" title="Circle (C)"><i class="fa-regular fa-circle"></i></button>
+          <button class="tool-btn" data-tool="line" title="Line (L)"><i class="fa-solid fa-slash"></i></button>
+          <button class="tool-btn" data-tool="eraser" title="Eraser (E) — click objects to remove"><i class="fa-solid fa-eraser"></i></button>
+        </div>
+        <div class="grid grid-cols-5 gap-1 mt-1.5">
+          <button class="mini-btn !text-[10px]" id="btnGrid" title="Toggle grid"><i class="fa-solid fa-border-all"></i></button>
+          <button class="mini-btn !text-[10px]" id="btnRuler" title="Toggle rulers"><i class="fa-solid fa-ruler"></i></button>
+          <button class="mini-btn !text-[10px]" id="btnSnap" title="Toggle magnetic snapping"><i class="fa-solid fa-magnet"></i></button>
+          <button class="mini-btn !text-[10px]" id="btnZoneLock" title="Lock zone markers so they can't be grabbed"><i class="fa-solid fa-lock"></i></button>
+          <button class="mini-btn !text-[10px]" id="btnPaper" title="Show or hide the white artboard (exports stay white either way)"><i class="fa-solid fa-file"></i></button>
+        </div>
+      </div>
+
+      <!-- library header -->
+      <div class="px-3 pt-3 pb-2">
+        <div class="sec-title" id="libTitle">Apparel</div>
+        <p class="text-[10.5px] text-muted mt-1.5 leading-snug" id="libHint">Drag onto the artboard, or click to drop it in the centre.</p>
+      </div>
+
+      <!-- library grid (rendered by JS) -->
+      <div class="flex-1 overflow-y-auto px-2.5 pb-4">
+        <div class="grid grid-cols-3 gap-1.5" id="libGrid"></div>
+
+        <!-- COLLECTION tab: real product photography -->
+        <div id="collectionPanel" class="hidden space-y-2 mt-1">
+          <label class="w-full nav-btn justify-center cursor-pointer">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Upload product photos
+            <input type="file" id="fileCatalog" accept="image/*" class="hidden" multiple />
+          </label>
+          <label class="flex items-start gap-2 text-[10.5px] text-muted leading-snug px-0.5">
+            <input type="checkbox" id="optCutout" class="accent-brass mt-0.5" checked />
+            <span>Cut out white studio backgrounds and trim the edges so products sit flush on a shelf.</span>
+          </label>
+          <div class="flex items-center justify-between pt-1">
+            <span class="text-[9.5px] uppercase tracking-[.13em] text-muted font-semibold" id="catalogCount">0 items</span>
+            <button id="btnCatalogClear" class="text-[10px] text-muted hover:text-coral">Clear all</button>
+          </div>
+          <div class="grid grid-cols-2 gap-1.5" id="catalogGrid"></div>
+          <p class="text-[10px] text-muted leading-relaxed pt-1">Photos live in this browser and stay available across every project. Click a card to place it, drag it onto a shelf, or press the pencil to edit its SKU and price.</p>
+        </div>
+
+        <!-- MEDIA tab extras -->
+        <div id="mediaPanel" class="hidden space-y-2 mt-1">
+          <button id="btnAddText" class="w-full nav-btn justify-center"><i class="fa-solid fa-t"></i> Add text box</button>
+          <button id="btnAddTag" class="w-full nav-btn justify-center"><i class="fa-solid fa-tag"></i> Brand / category tag</button>
+          <label class="w-full nav-btn justify-center cursor-pointer">
+            <i class="fa-solid fa-upload"></i> Upload product photo
+            <input type="file" id="fileImage" accept="image/*" class="hidden" multiple />
+          </label>
+          <label class="w-full nav-btn justify-center cursor-pointer">
+            <i class="fa-solid fa-map"></i> Set background blueprint
+            <input type="file" id="fileBg" accept="image/*" class="hidden" />
+          </label>
+          <button id="btnClearBg" class="w-full nav-btn justify-center"><i class="fa-solid fa-ban"></i> Remove background</button>
+          <p class="text-[10px] text-muted leading-relaxed pt-1">Photos keep their aspect ratio and land at the centre of the view. Blueprints sit behind everything and are locked.</p>
+        </div>
+
+        <!-- LOOKS tab extras -->
+        <div id="looksPanel" class="hidden space-y-2 mt-1">
+          <button id="btnMakeLook" class="w-full nav-btn justify-center"><i class="fa-solid fa-object-group"></i> Group selection as look</button>
+          <div id="lookList" class="space-y-1.5"></div>
+          <p class="text-[10px] text-muted leading-relaxed pt-1">A look ties a top, bottom, shoe and bag together so the store team styles them as one set.</p>
+
+          <div class="sec-title pt-2">Lookbook stamps</div>
+          <button id="btnSaveStamp" class="w-full nav-btn justify-center"><i class="fa-solid fa-stamp"></i> Save selection as stamp</button>
+          <div id="stampList" class="space-y-1.5"></div>
+          <p class="text-[10px] text-muted leading-relaxed">Stamps are reusable arrangements — a shoe block, a folded stack, a full bay — kept across every project in this browser.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ---------------- CENTRE: canvas workspace ---------------- -->
+    <main class="flex-1 min-w-0 flex flex-col bg-graphite relative" id="stage">
+      <!-- ruler row -->
+      <div class="flex h-[22px] shrink-0" id="rulerRow">
+        <div class="w-[22px] h-[22px] ruler-corner flex items-center justify-center text-[8px] text-muted font-mono">cm</div>
+        <canvas id="rulerTop" class="flex-1 border-b border-hairline"></canvas>
+      </div>
+      <div class="flex flex-1 min-h-0">
+        <canvas id="rulerLeft" class="w-[22px] shrink-0 border-r border-hairline"></canvas>
+        <!-- fabric host -->
+        <div class="flex-1 relative min-w-0" id="canvasHost">
+          <canvas id="c"></canvas>
+          <div class="drop-hint" id="dropHint"></div>
+        </div>
+      </div>
+
+      <!-- status bar -->
+      <div class="h-8 shrink-0 bg-shell border-t border-hairline flex items-center px-3 gap-4 text-[11px] text-muted">
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-crosshairs text-[10px]"></i><span class="readout" id="cursorPos">0 × 0 cm</span></span>
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-vector-square text-[10px]"></i><span class="readout" id="sizeReadout">—</span></span>
+        <span class="flex items-center gap-1.5" id="snapState"><i class="fa-solid fa-magnet text-[10px]"></i>Snapping on</span>
+        <div class="flex-1"></div>
+        <span id="objCount">0 objects</span>
+        <div class="flex items-center gap-1">
+          <button id="btnZoomOut" class="tool-btn !w-7 !h-6" title="Zoom out (Ctrl+-)"><i class="fa-solid fa-minus text-[10px]"></i></button>
+          <span class="readout w-12 text-center" id="zoomReadout">100%</span>
+          <button id="btnZoomIn" class="tool-btn !w-7 !h-6" title="Zoom in (Ctrl++)"><i class="fa-solid fa-plus text-[10px]"></i></button>
+          <button id="btnZoomFit" class="tool-btn !w-7 !h-6" title="Fit artboard (Ctrl+0)"><i class="fa-solid fa-expand text-[10px]"></i></button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ---------------- RIGHT: inspector ---------------- -->
+    <aside class="w-[268px] shrink-0 bg-panel border-l border-hairline flex flex-col min-h-0">
+      <div class="px-3 py-3 border-b border-hairline">
+        <div class="sec-title">Inspector</div>
+        <p class="text-[11px] mt-1.5 text-chalk font-medium" id="selName">Nothing selected</p>
+        <p class="text-[10px] text-muted" id="selMeta">Pick an object on the artboard to edit it.</p>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-3 space-y-4" id="inspectorBody">
+
+        <!-- geometry -->
+        <section class="space-y-2 hidden" data-sec="geom">
+          <div class="sec-title">Geometry</div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="field"><label>X (cm)</label><input class="input" id="inpX" type="number" step="0.5" /></div>
+            <div class="field"><label>Y (cm)</label><input class="input" id="inpY" type="number" step="0.5" /></div>
+            <div class="field"><label>Width (cm)</label><input class="input" id="inpW" type="number" step="0.5" /></div>
+            <div class="field"><label>Height (cm)</label><input class="input" id="inpH" type="number" step="0.5" /></div>
+            <div class="field"><label>Rotation °</label><input class="input" id="inpR" type="number" step="1" /></div>
+            <div class="field"><label>Opacity %</label><input class="input" id="inpO" type="number" min="0" max="100" step="5" /></div>
+          </div>
+        </section>
+
+        <!-- appearance -->
+        <section class="space-y-2 hidden" data-sec="style">
+          <div class="sec-title">Appearance</div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="field"><label>Fill</label><input class="input-color" id="inpFill" type="color" value="#cfd8e3" /></div>
+            <div class="field"><label>Stroke</label><input class="input-color" id="inpStroke" type="color" value="#0e1116" /></div>
+          </div>
+          <div class="field"><label>Stroke width</label><input class="input" id="inpStrokeW" type="range" min="0" max="12" step="0.5" /></div>
+          <div class="grid grid-cols-6 gap-1" id="swatches"></div>
+          <label class="flex items-center gap-2 text-[11px] text-muted pt-1">
+            <input type="checkbox" id="inpDashed" class="accent-brass" /> Dashed outline
+          </label>
+        </section>
+
+        <!-- text -->
+        <section class="space-y-2 hidden" data-sec="text">
+          <div class="sec-title">Text</div>
+          <textarea id="inpText" rows="2" class="input !font-sans resize-none"></textarea>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="field"><label>Font</label>
+              <select class="input" id="inpFont">
+                <option>Inter</option><option>Space Grotesk</option><option>JetBrains Mono</option>
+                <option>Georgia</option><option>Arial</option><option>Impact</option>
+              </select>
+            </div>
+            <div class="field"><label>Size</label><input class="input" id="inpFontSize" type="number" min="6" max="200" /></div>
+          </div>
+          <div class="grid grid-cols-4 gap-1">
+            <button class="mini-btn" data-textcmd="bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
+            <button class="mini-btn" data-textcmd="italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
+            <button class="mini-btn" data-textcmd="left" title="Align left"><i class="fa-solid fa-align-left"></i></button>
+            <button class="mini-btn" data-textcmd="center" title="Align centre"><i class="fa-solid fa-align-center"></i></button>
+          </div>
+        </section>
+
+        <!-- merchandising data -->
+        <section class="space-y-2 hidden" data-sec="merch">
+          <div class="sec-title">Merchandising</div>
+          <div class="field"><label>Product name</label><input class="input !font-sans" id="inpName" placeholder="Unnamed item" /></div>
+          <div class="field"><label>SKU / style code</label><input class="input" id="inpSku" placeholder="e.g. SH-4471-BLK" /></div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="field"><label>Brand</label><input class="input !font-sans" id="inpBrand" placeholder="Brand" /></div>
+            <div class="field"><label>Colourway</label><input class="input !font-sans" id="inpColorway" placeholder="Black / tan" /></div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="field"><label>Price</label><input class="input" id="inpPrice" placeholder="199.00" /></div>
+            <div class="field"><label>Facings</label><input class="input" id="inpFacings" type="number" min="1" max="24" value="1" /></div>
+          </div>
+          <div class="field"><label>Sizes</label><input class="input !font-sans" id="inpSizes" placeholder="36 · 37 · 38 · 39" /></div>
+          <div class="grid grid-cols-2 gap-1">
+            <button id="btnApplyFacings" class="mini-btn"><i class="fa-solid fa-clone mr-1.5"></i>Stamp row</button>
+            <button id="btnFillShelf" class="mini-btn"><i class="fa-solid fa-arrows-left-right-to-line mr-1.5"></i>Fill shelf</button>
+          </div>
+          <p class="text-[10px] text-muted leading-relaxed" id="capacityNote"></p>
+          <p class="text-[10px] text-muted leading-relaxed" id="lookNote"></p>
+        </section>
+
+        <!-- arrange -->
+        <section class="space-y-2 hidden" data-sec="arrange">
+          <div class="sec-title">Arrange</div>
+          <div class="grid grid-cols-4 gap-1">
+            <button class="mini-btn" data-order="front" title="Bring to front"><i class="fa-solid fa-angles-up"></i></button>
+            <button class="mini-btn" data-order="forward" title="Bring forward"><i class="fa-solid fa-angle-up"></i></button>
+            <button class="mini-btn" data-order="backward" title="Send backward"><i class="fa-solid fa-angle-down"></i></button>
+            <button class="mini-btn" data-order="back" title="Send to back"><i class="fa-solid fa-angles-down"></i></button>
+          </div>
+          <div class="grid grid-cols-6 gap-1">
+            <button class="mini-btn" data-align="left" title="Align left"><i class="fa-solid fa-align-left"></i></button>
+            <button class="mini-btn" data-align="centerH" title="Centre horizontally"><i class="fa-solid fa-align-center"></i></button>
+            <button class="mini-btn" data-align="right" title="Align right"><i class="fa-solid fa-align-right"></i></button>
+            <button class="mini-btn" data-align="top" title="Align top"><i class="fa-solid fa-arrow-up-wide-short"></i></button>
+            <button class="mini-btn" data-align="middle" title="Centre vertically"><i class="fa-solid fa-bars"></i></button>
+            <button class="mini-btn" data-align="bottom" title="Align bottom"><i class="fa-solid fa-arrow-down-wide-short"></i></button>
+          </div>
+          <div class="grid grid-cols-2 gap-1">
+            <button class="mini-btn" data-align="distH" title="Distribute horizontally"><i class="fa-solid fa-arrows-left-right mr-1.5"></i>Space H</button>
+            <button class="mini-btn" data-align="distV" title="Distribute vertically"><i class="fa-solid fa-arrows-up-down mr-1.5"></i>Space V</button>
+          </div>
+          <div class="grid grid-cols-3 gap-1 pt-1">
+            <button class="mini-btn" id="btnDuplicate" title="Duplicate (Ctrl+D)"><i class="fa-solid fa-copy"></i></button>
+            <button class="mini-btn" id="btnLock" title="Lock / unlock"><i class="fa-solid fa-lock"></i></button>
+            <button class="mini-btn !text-coral" id="btnDelete" title="Delete (Del)"><i class="fa-solid fa-trash"></i></button>
+          </div>
+        </section>
+
+        <!-- artboard defaults when nothing is selected -->
+        <section class="space-y-2" data-sec="board">
+          <div class="sec-title">Artboard</div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="field"><label>Width (cm)</label><input class="input" id="inpBoardW" type="number" step="10" /></div>
+            <div class="field"><label>Height (cm)</label><input class="input" id="inpBoardH" type="number" step="10" /></div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="field"><label>Grid step (cm)</label><input class="input" id="inpGridStep" type="number" step="5" value="10" /></div>
+            <div class="field"><label>Export margin %</label><input class="input" id="inpExportPad" type="number" min="0" max="30" step="1" value="8" /></div>
+          </div>
+          <button id="btnApplyBoard" class="mini-btn w-full"><i class="fa-solid fa-check mr-1.5"></i>Apply artboard size</button>
+          <p class="text-[10px] text-muted leading-relaxed">Wall elevations are drawn 1:1 in centimetres, so a 400 × 250 board is a four-metre wall.</p>
+        </section>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ====================== MODALS ====================== -->
+<div class="modal-wrap" id="modalProjects">
+  <div class="bg-panel border border-hairline rounded-2xl w-[620px] max-h-[74vh] flex flex-col shadow-2xl">
+    <div class="p-4 border-b border-hairline flex items-center justify-between">
+      <div><h3 class="font-display font-bold text-[15px]">Projects</h3><p class="text-[11px] text-muted mt-0.5" id="projectsSub">Open a project or roll back to an earlier version.</p></div>
+      <button class="tool-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="px-4 py-3 border-b border-hairline flex items-end gap-2">
+      <div class="field flex-1"><label>Workspace</label><input class="input !font-sans" id="inpWorkspace" placeholder="central-office" /></div>
+      <button id="btnWorkspace" class="nav-btn">Switch</button>
+      <button id="btnRefreshProjects" class="nav-btn"><i class="fa-solid fa-rotate"></i> Refresh</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-3 space-y-2" id="projectList"></div>
+  </div>
+</div>
+
+<div class="modal-wrap" id="modalCompliance">
+  <div class="bg-panel border border-hairline rounded-2xl w-[640px] max-h-[80vh] flex flex-col shadow-2xl">
+    <div class="p-4 border-b border-hairline flex items-center justify-between">
+      <div><h3 class="font-display font-bold text-[15px]">Store execution report</h3><p class="text-[11px] text-muted mt-0.5">Stores upload a photo of the finished wall; the office marks it against the guideline.</p></div>
+      <button class="tool-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="p-4 space-y-3 overflow-y-auto">
+      <div class="grid grid-cols-3 gap-2">
+        <div class="field"><label>Store</label><input class="input !font-sans" id="cmpStore" placeholder="Tbilisi Galleria" /></div>
+        <div class="field"><label>Status</label>
+          <select class="input" id="cmpStatus"><option value="pending">Awaiting review</option><option value="approved">Approved</option><option value="rework">Needs rework</option></select>
+        </div>
+        <div class="field"><label>Photo</label>
+          <label class="mini-btn cursor-pointer"><i class="fa-solid fa-camera mr-1.5"></i><span id="cmpPhotoLabel">Choose file</span>
+            <input type="file" id="cmpPhoto" accept="image/*" class="hidden" /></label>
+        </div>
+      </div>
+      <div class="field"><label>Note to store</label><input class="input !font-sans" id="cmpNote" placeholder="Move the sneaker block one shelf up." /></div>
+      <div id="cmpPreviewWrap" class="hidden flex items-center gap-3 rounded-xl border border-hairline bg-shell p-2">
+        <img id="cmpPreview" alt="Attached store photo" class="h-16 w-24 rounded-lg object-cover" />
+        <div class="flex-1 text-[11px] text-muted" id="cmpPreviewName">Photo attached</div>
+        <button id="cmpClearPhoto" class="tool-btn !w-8 !h-8 !text-coral" title="Remove photo"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <button id="cmpAdd" class="nav-btn primary w-full justify-center"><i class="fa-solid fa-plus"></i> Add report</button>
+      <div id="cmpList" class="grid grid-cols-3 gap-2 pt-1"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-wrap" id="modalProduct">
+  <div class="bg-panel border border-hairline rounded-2xl w-[520px] shadow-2xl">
+    <div class="p-4 border-b border-hairline flex items-center justify-between">
+      <div><h3 class="font-display font-bold text-[15px]">Product details</h3><p class="text-[11px] text-muted mt-0.5">This data travels with the item every time you place it on a wall.</p></div>
+      <button class="tool-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="p-4 flex gap-4">
+      <img id="prodThumb" alt="Product photo" class="w-28 h-36 object-contain rounded-xl border border-hairline bg-shell" />
+      <div class="flex-1 space-y-2">
+        <div class="field"><label>Product name</label><input class="input !font-sans" id="prodName" /></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="field"><label>SKU</label><input class="input" id="prodSku" placeholder="SH-4471-BLK" /></div>
+          <div class="field"><label>Brand</label><input class="input !font-sans" id="prodBrand" /></div>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <div class="field"><label>Price</label><input class="input" id="prodPrice" placeholder="199.00" /></div>
+          <div class="field"><label>Colourway</label><input class="input !font-sans" id="prodColorway" placeholder="Black / tan" /></div>
+          <div class="field"><label>Width (cm)</label><input class="input" id="prodWidth" type="number" min="2" max="300" /></div>
+        </div>
+        <div class="field"><label>Sizes on the wall</label><input class="input !font-sans" id="prodSizes" placeholder="36–41, one per facing" /></div>
+      </div>
+    </div>
+    <div class="p-4 pt-0 flex gap-2">
+      <button id="prodDelete" class="nav-btn !text-coral"><i class="fa-solid fa-trash"></i> Remove from library</button>
+      <div class="flex-1"></div>
+      <button class="nav-btn" data-close>Cancel</button>
+      <button id="prodSave" class="nav-btn primary"><i class="fa-solid fa-check"></i> Save details</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-wrap" id="modalHelp">
+  <div class="bg-panel border border-hairline rounded-2xl w-[520px] shadow-2xl">
+    <div class="p-4 border-b border-hairline flex items-center justify-between">
+      <h3 class="font-display font-bold text-[15px]">Keyboard shortcuts</h3>
+      <button class="tool-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-[12px]" id="helpGrid"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =====================================================================
+   MERCHSTUDIO — Visual Merchandising Editor
+   Single file build. Sections:
+     1. Constants & silhouette library
+     2. Canvas bootstrap, paper + grid painting, rulers
+     3. Object factories (products, fixtures, shapes, text)
+     4. Tools: select / pan / draw / eraser, snapping
+     5. Inspector binding
+     6. History, clipboard, shortcuts, alignment, layers
+     7. Projects (localStorage + version history), export, compliance
+   ===================================================================== */
+
+/* ------------------------------------------------------------------ */
+/* 0. SAFETY NET                                                       */
+/* ------------------------------------------------------------------ */
+/**
+ * Element lookup. Declared as a hoisted function (not a const arrow) so any
+ * module below can wire itself up regardless of the order sections appear in —
+ * a const here would put every earlier line in the temporal dead zone and take
+ * the whole script down with it.
+ * A missing id returns a detached stub instead of null, so one renamed element
+ * can never blank the canvas; it just logs a warning.
+ */
+function $(id) {
+  const el = document.getElementById(id);
+  if (el) return el;
+  if (!$._warned[id]) { $._warned[id] = true; console.warn('[MerchStudio] missing element #' + id); }
+  return $._stub || ($._stub = document.createElement('div'));
+}
+$._warned = {};
+
+/** Anything fatal becomes a readable banner instead of a black screen. */
+function showFatal(message) {
+  let bar = document.getElementById('fatalBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'fatalBar';
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:200;background:#2a1416;' +
+      'border-top:1px solid #ef6f6c;color:#ffd9d8;font:12px/1.5 Inter,sans-serif;padding:10px 14px;';
+    document.body.appendChild(bar);
+  }
+  bar.textContent = 'Something went wrong: ' + message + ' — reload the page; your last saved project is safe.';
+}
+window.addEventListener('error', e => showFatal(e.message || 'unknown error'));
+window.addEventListener('unhandledrejection', e => showFatal((e.reason && e.reason.message) || 'async error'));
+
+/* ------------------------------------------------------------------ */
+/* 1. CONSTANTS                                                        */
+/* ------------------------------------------------------------------ */
+const MODES = {
+  wall:  { label: 'Wall elevation', boardCm: { w: 400, h: 250 }, pxPerCm: 2.4, gridCm: 10 },
+  floor: { label: 'Floor plan',     boardCm: { w: 1600, h: 1100 }, pxPerCm: 0.6, gridCm: 50 }
+};
+const EXTRA_PROPS = ['data', 'name', 'selectable', 'evented', 'lockMovementX', 'lockMovementY'];
+const PALETTE = ['#ffffff','#dfe5ec','#8592a3','#3b4453','#17202b','#e8b44a','#c98b2e','#3ecfb2','#4a90d9','#a06ce0','#ef6f6c','#7d5a3c'];
+
+let mode      = 'wall';
+let pxPerCm   = MODES.wall.pxPerCm;
+let board     = { w: MODES.wall.boardCm.w * MODES.wall.pxPerCm, h: MODES.wall.boardCm.h * MODES.wall.pxPerCm };
+let gridCm    = MODES.wall.gridCm;
+let showGrid  = true, showRuler = true, snapOn = true, exporting = false;
+let zonesLocked = true;                      // zone markers stay out of the way by default
+let sheetMode   = 'dark';                    // 'dark' | 'white' | 'off' — editing surface only
+let activeTool = 'select';
+let currentProjectId = null;
+
+const cm = px => px / pxPerCm;          // px  -> cm
+const px = c  => c  * pxPerCm;          // cm  -> px
+const round1 = n => Math.round(n * 10) / 10;
+
+/* ------------------------------------------------------------------ */
+/* 1b. VECTOR SILHOUETTES (100x100 viewbox path data)                  */
+/* ------------------------------------------------------------------ */
+const SIL = {
+  tshirt:   'M20,20 L38,10 C42,22 58,22 62,10 L80,20 L90,38 L74,46 L74,90 L26,90 L26,46 L10,38 Z',
+  poloShirt:'M20,20 L38,10 L50,30 L62,10 L80,20 L90,38 L74,46 L74,90 L26,90 L26,46 L10,38 Z',
+  jacket:   'M22,18 L40,8 L50,32 L60,8 L78,18 L90,40 L76,48 L76,92 L54,92 L54,34 L46,34 L46,92 L24,92 L24,48 L10,40 Z',
+  hoodie:   'M24,20 L38,10 C40,26 60,26 62,10 L76,20 L90,42 L76,50 L76,92 L24,92 L24,50 L10,42 Z M40,52 L60,52 L60,66 L40,66 Z',
+  pants:    'M28,10 L72,10 L77,50 L70,92 L56,92 L50,52 L44,92 L30,92 L23,50 Z',
+  jeans:    'M28,10 L72,10 L77,50 L70,92 L56,92 L50,52 L44,92 L30,92 L23,50 Z M28,18 L72,18',
+  skirt:    'M32,14 L68,14 L70,30 L84,88 L16,88 L30,30 Z',
+  dress:    'M32,16 L42,8 C46,18 54,18 58,8 L68,16 L62,40 L84,90 L16,90 L38,40 Z',
+  coat:     'M24,16 L40,8 L50,30 L60,8 L76,16 L88,40 L76,46 L76,94 L24,94 L24,46 L12,40 Z M50,30 L50,94',
+  sweater:  'M18,22 L36,12 C40,22 60,22 64,12 L82,22 L94,44 L80,52 L76,90 L24,90 L20,52 L6,44 Z',
+  heels:    'M6,82 C6,74 10,70 18,66 L38,56 C48,51 55,44 60,34 C63,28 70,26 75,30 C79,34 79,41 76,47 L70,60 L76,62 L82,88 L72,88 L66,66 L16,86 C9,87 6,86 6,82 Z',
+  sneaker:  'M8,78 C8,68 10,62 18,58 C30,53 42,50 54,46 C60,44 64,40 68,36 C72,32 78,32 82,36 C88,44 92,58 93,70 L93,74 C93,77 91,78 88,78 Z M12,66 L93,66 L93,71 L12,71 Z',
+  boot:     'M30,8 L58,8 L58,52 C58,60 63,66 72,70 L86,76 C90,78 92,82 92,86 L92,90 L30,90 Z',
+  flats:    'M8,72 C8,62 22,54 42,50 C60,46 78,46 89,50 C94,52 95,58 93,64 C90,72 80,78 62,79 L20,79 C12,79 8,77 8,72 Z M30,54 C40,60 60,62 78,58',
+  sandal:   'M12,66 C12,60 22,54 40,50 C58,46 78,46 90,50 L90,60 C90,68 80,74 62,75 L22,75 C15,75 12,72 12,66 Z M30,52 L60,72 M60,52 L30,72',
+  handbag:  'M20,38 L80,38 L88,90 L12,90 Z M34,38 C34,18 66,18 66,38 L60,38 C60,26 40,26 40,38 Z',
+  sportbag: 'M10,44 C10,39 15,36 20,36 L80,36 C85,36 90,39 90,44 L90,78 C90,84 85,88 79,88 L21,88 C15,88 10,84 10,78 Z M30,36 C30,22 70,22 70,36 L62,36 C62,30 38,30 38,36 Z',
+  backpack: 'M22,34 C22,16 78,16 78,34 L78,86 C78,90 75,92 71,92 L29,92 C25,92 22,90 22,86 Z M38,34 L62,34 L62,54 L38,54 Z',
+  socks:    'M30,8 L58,8 L58,50 C58,58 62,63 70,67 L84,74 C90,77 92,82 89,87 C86,92 80,92 75,89 L38,69 C33,66 30,60 30,54 Z',
+  belt:     'M6,42 L66,42 C74,42 80,46 80,52 C80,58 74,62 66,62 L6,62 Z M80,44 L94,44 L94,60 L80,60 Z M84,48 L90,48 L90,56 L84,56 Z',
+  wallet:   'M12,28 C12,24 16,21 21,21 L79,21 C85,21 89,26 89,32 L89,72 C89,78 85,82 79,82 L21,82 C16,82 12,78 12,73 Z M58,44 L92,44 L92,60 L58,60 Z M72,48 A4,4 0 1,1 71.9,48 Z',
+  cap:      'M10,66 C10,42 28,22 52,22 C74,22 88,40 89,58 L92,58 C97,58 99,62 99,66 L99,68 C99,70 97,70 95,70 L14,70 C11,70 10,68 10,66 Z',
+  hat:      'M28,20 L72,20 L72,58 L92,66 C96,68 96,74 92,76 L8,76 C4,74 4,68 8,66 L28,58 Z',
+  scarf:    'M24,10 L76,10 L76,26 C76,34 66,38 66,48 L66,90 L56,90 L56,48 C56,38 44,38 44,48 L44,90 L34,90 L34,48 C34,38 24,34 24,26 Z',
+  hanger:   'M50,10 C43,10 38,15 38,21 C38,26 41,29 46,30 L8,54 C3,57 5,63 10,63 L90,63 C95,63 97,57 92,54 L54,30 C59,29 62,26 62,21 C62,15 57,10 50,10 Z',
+  mannequin:'M50,6 A9,9 0 1,1 49.9,6 M38,20 L62,20 L68,52 L60,52 L58,94 L42,94 L40,52 L32,52 Z'
+};
+
+function silSvg(path, fill) {
+  return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="' + path + '" fill-rule="evenodd" fill="' + (fill || 'currentColor') + '"/></svg>';
+}
+
+/* ------------------------------------------------------------------ */
+/* 1c. LIBRARY TABS                                                    */
+/* ------------------------------------------------------------------ */
+const LIBRARY = {
+  apparel: {
+    title: 'Apparel silhouettes',
+    hint: 'Drag onto the artboard, or click to drop it in the centre of the view.',
+    items: [
+      { id: 'tshirt', label: 'T-shirt', kind: 'product', cat: 'Tops', w: 46 },
+      { id: 'poloShirt', label: 'Polo', kind: 'product', cat: 'Tops', w: 46 },
+      { id: 'sweater', label: 'Sweater', kind: 'product', cat: 'Tops', w: 48 },
+      { id: 'hoodie', label: 'Hoodie', kind: 'product', cat: 'Tops', w: 48 },
+      { id: 'jacket', label: 'Jacket', kind: 'product', cat: 'Outerwear', w: 50 },
+      { id: 'coat', label: 'Coat', kind: 'product', cat: 'Outerwear', w: 52 },
+      { id: 'pants', label: 'Trousers', kind: 'product', cat: 'Bottoms', w: 40 },
+      { id: 'jeans', label: 'Jeans', kind: 'product', cat: 'Bottoms', w: 40 },
+      { id: 'skirt', label: 'Skirt', kind: 'product', cat: 'Bottoms', w: 40 },
+      { id: 'dress', label: 'Dress', kind: 'product', cat: 'Dresses', w: 46 },
+      { id: 'scarf', label: 'Scarf', kind: 'product', cat: 'Accessories', w: 32 },
+      { id: 'hanger', label: 'Hanger', kind: 'product', cat: 'Fixture', w: 34 }
+    ]
+  },
+  footwear: {
+    title: 'Footwear & accessories',
+    hint: 'Products snap onto the nearest shelf or rail when you drop them close to one.',
+    items: [
+      { id: 'heels', label: 'Heels', kind: 'product', cat: 'Footwear', w: 30 },
+      { id: 'sneaker', label: 'Sneakers', kind: 'product', cat: 'Footwear', w: 32 },
+      { id: 'boot', label: 'Boots', kind: 'product', cat: 'Footwear', w: 30 },
+      { id: 'flats', label: 'Flats', kind: 'product', cat: 'Footwear', w: 30 },
+      { id: 'sandal', label: 'Sandals', kind: 'product', cat: 'Footwear', w: 30 },
+      { id: 'handbag', label: 'Handbag', kind: 'product', cat: 'Bags', w: 32 },
+      { id: 'sportbag', label: 'Sports bag', kind: 'product', cat: 'Bags', w: 38 },
+      { id: 'backpack', label: 'Backpack', kind: 'product', cat: 'Bags', w: 32 },
+      { id: 'socks', label: 'Socks', kind: 'product', cat: 'Legwear', w: 22 },
+      { id: 'belt', label: 'Belt', kind: 'product', cat: 'Accessories', w: 34 },
+      { id: 'wallet', label: 'Wallet', kind: 'product', cat: 'Accessories', w: 24 },
+      { id: 'cap', label: 'Cap', kind: 'product', cat: 'Headwear', w: 28 },
+      { id: 'hat', label: 'Hat', kind: 'product', cat: 'Headwear', w: 32 },
+      { id: 'mannequin', label: 'Mannequin', kind: 'product', cat: 'Fixture', w: 44 }
+    ]
+  },
+  fixtures: {
+    title: 'Fixtures & structure',
+    hint: 'Shelves and rails are snap targets — products land flush on their surface.',
+    items: [
+      { id: 'shelf',     label: 'Shelf', kind: 'fixture', icon: 'fa-grip-lines' },
+      { id: 'shelfBay',  label: 'Shelf bay ×4', kind: 'fixture', icon: 'fa-bars' },
+      { id: 'rail',      label: 'Hanging rail', kind: 'fixture', icon: 'fa-minus' },
+      { id: 'gondola',   label: 'Gondola', kind: 'fixture', icon: 'fa-table-columns' },
+      { id: 'table',     label: 'Display table', kind: 'fixture', icon: 'fa-table' },
+      { id: 'podium',    label: 'Podium', kind: 'fixture', icon: 'fa-cube' },
+      { id: 'rack',      label: 'Round rack', kind: 'fixture', icon: 'fa-circle-notch' },
+      { id: 'wall',      label: 'Wall segment', kind: 'fixture', icon: 'fa-square-full' },
+      { id: 'pillar',    label: 'Pillar', kind: 'fixture', icon: 'fa-square' },
+      { id: 'cashdesk',  label: 'Cash desk', kind: 'fixture', icon: 'fa-cash-register' },
+      { id: 'fitting',   label: 'Fitting room', kind: 'fixture', icon: 'fa-door-closed' },
+      { id: 'floorline', label: 'Floor line', kind: 'fixture', icon: 'fa-ruler-horizontal' }
+    ]
+  },
+  shapes: {
+    title: 'Shapes & lines',
+    hint: 'Use rectangles for boxed stock, polygons for odd wall shapes.',
+    items: [
+      { id: 'rect', label: 'Rectangle', kind: 'shape', icon: 'fa-square' },
+      { id: 'rounded', label: 'Rounded', kind: 'shape', icon: 'fa-square-full' },
+      { id: 'circle', label: 'Circle', kind: 'shape', icon: 'fa-circle' },
+      { id: 'triangle', label: 'Triangle', kind: 'shape', icon: 'fa-play' },
+      { id: 'polygon', label: 'Polygon', kind: 'shape', icon: 'fa-draw-polygon' },
+      { id: 'line', label: 'Line', kind: 'shape', icon: 'fa-slash' },
+      { id: 'dashed', label: 'Dashed line', kind: 'shape', icon: 'fa-grip-lines' },
+      { id: 'arrow', label: 'Arrow', kind: 'shape', icon: 'fa-arrow-right' }
+    ]
+  },
+  zones: {
+    title: 'Zones & signage',
+    hint: 'Zone markers are translucent overlays that never block selection of products.',
+    items: [
+      { id: 'zWindow', label: 'Window', kind: 'zone', color: '#e8b44a' },
+      { id: 'zEntrance', label: 'Entrance', kind: 'zone', color: '#3ecfb2' },
+      { id: 'zPromo', label: 'Promo table', kind: 'zone', color: '#ef6f6c' },
+      { id: 'zPerimeter', label: 'Perimeter', kind: 'zone', color: '#4a90d9' },
+      { id: 'zHotspot', label: 'Hotspot', kind: 'zone', color: '#a06ce0' },
+      { id: 'zLight', label: 'Light accent', kind: 'zone', color: '#f5e6b8' },
+      { id: 'tagBrand', label: 'Brand tag', kind: 'tag', icon: 'fa-tag' },
+      { id: 'tagPrice', label: 'Price tag', kind: 'tag', icon: 'fa-money-bill' }
+    ]
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/* 2. CANVAS BOOTSTRAP                                                 */
+/* ------------------------------------------------------------------ */
+const host = document.getElementById('canvasHost');
+const canvas = new fabric.Canvas('c', {
+  backgroundColor: '#0e1116',
+  preserveObjectStacking: true,
+  selection: true,
+  fireRightClick: false,
+  stopContextMenu: true
+});
+
+// Selection styling — brass handles read as measurement marks on the artboard.
+fabric.Object.prototype.set({
+  transparentCorners: false,
+  cornerColor: '#e8b44a',
+  cornerStrokeColor: '#17202b',
+  cornerStyle: 'circle',
+  cornerSize: 9,
+  borderColor: '#e8b44a',
+  borderScaleFactor: 1.4,
+  padding: 2,
+  objectCaching: false
+});
+
+/* keep every custom property when serialising */
+const _toObject = fabric.Object.prototype.toObject;
+fabric.Object.prototype.toObject = function (props) {
+  return _toObject.call(this, EXTRA_PROPS.concat(props || []));
+};
+
+function resizeCanvas() {
+  canvas.setDimensions({ width: host.clientWidth, height: host.clientHeight });
+  drawRulers();
+  canvas.requestRenderAll();
+}
+window.addEventListener('resize', resizeCanvas);
+
+/* ---------- paper (artboard) + grid, painted under every object ----- */
+canvas.on('before:render', function (opt) {
+  const ctx = (opt && opt.ctx) || canvas.getContext();
+  const vpt = canvas.viewportTransform;
+  ctx.save();
+  ctx.setTransform(vpt[0], vpt[1], vpt[2], vpt[3], vpt[4], vpt[5]);
+
+  // Artboard surface. It is painted, never an object, so nothing on the canvas
+  // can select or drag it. While editing it follows the dark UI; the export
+  // pass ignores the mode entirely and always lays down clean white.
+  if (exporting) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, board.w, board.h);
+  } else if (sheetMode !== 'off') {
+    ctx.shadowColor = 'rgba(0,0,0,.5)';
+    ctx.shadowBlur = 26;
+    ctx.shadowOffsetY = 8;
+    ctx.fillStyle = sheetMode === 'white' ? '#ffffff' : '#151a21';
+    ctx.fillRect(0, 0, board.w, board.h);
+    ctx.shadowColor = 'transparent';
+  }
+
+  // grid
+  if (showGrid && !exporting) {
+    const step = px(gridCm);
+    ctx.beginPath();
+    for (let x = step; x < board.w; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, board.h); }
+    for (let y = step; y < board.h; y += step) { ctx.moveTo(0, y); ctx.lineTo(board.w, y); }
+    ctx.strokeStyle = sheetMode === 'white' ? 'rgba(20,32,48,.10)' : 'rgba(180,200,225,.08)';
+    ctx.lineWidth = 1 / canvas.getZoom();
+    ctx.stroke();
+
+    // heavier line every metre
+    const big = px(mode === 'wall' ? 50 : 200);
+    ctx.beginPath();
+    for (let x = big; x < board.w; x += big) { ctx.moveTo(x, 0); ctx.lineTo(x, board.h); }
+    for (let y = big; y < board.h; y += big) { ctx.moveTo(0, y); ctx.lineTo(board.w, y); }
+    ctx.strokeStyle = sheetMode === 'white' ? 'rgba(20,32,48,.20)' : 'rgba(180,200,225,.16)';
+    ctx.stroke();
+  }
+
+  // artboard boundary — a hairline so you always know where the wall ends
+  if (!exporting) {
+    ctx.strokeStyle = sheetMode === 'white' ? '#c3ccd8' : 'rgba(232,180,74,.55)';
+    ctx.lineWidth = 1 / canvas.getZoom();
+    if (sheetMode === 'off') ctx.setLineDash([8 / canvas.getZoom(), 6 / canvas.getZoom()]);
+    ctx.strokeRect(0, 0, board.w, board.h);
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+});
+
+/* ---------- rulers ------------------------------------------------- */
+const rTop = document.getElementById('rulerTop');
+const rLeft = document.getElementById('rulerLeft');
+
+function drawRulers() {
+  const zoom = canvas.getZoom(), vpt = canvas.viewportTransform;
+  const dpr = window.devicePixelRatio || 1;
+
+  [[rTop, 'h'], [rLeft, 'v']].forEach(([el, axis]) => {
+    const w = axis === 'h' ? el.clientWidth : 22;
+    const h = axis === 'h' ? 22 : el.clientHeight;
+    el.width = w * dpr; el.height = h * dpr;
+    const g = el.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#171d25'; g.fillRect(0, 0, w, h);
+
+    // choose a tick step that stays readable at the current zoom
+    const bases = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000];
+    let stepCm = bases.find(b => px(b) * zoom > 46) || 1000;
+    const startCm = -(axis === 'h' ? vpt[4] : vpt[5]) / zoom / pxPerCm;
+    const endCm = startCm + (axis === 'h' ? w : h) / zoom / pxPerCm;
+
+    g.strokeStyle = '#39424f'; g.fillStyle = '#8592a3';
+    g.font = '9px "JetBrains Mono", monospace';
+    g.beginPath();
+    const first = Math.floor(startCm / stepCm) * stepCm;
+    for (let c = first; c <= endCm; c += stepCm) {
+      const p = (px(c) * zoom) + (axis === 'h' ? vpt[4] : vpt[5]);
+      if (axis === 'h') { g.moveTo(p + .5, 14); g.lineTo(p + .5, 22); g.fillText(String(c), p + 3, 10); }
+      else { g.moveTo(14, p + .5); g.lineTo(22, p + .5);
+             g.save(); g.translate(10, p + 3); g.rotate(-Math.PI / 2); g.fillText(String(c), 0, 0); g.restore(); }
+      // half ticks
+      const mp = (px(c + stepCm / 2) * zoom) + (axis === 'h' ? vpt[4] : vpt[5]);
+      if (axis === 'h') { g.moveTo(mp + .5, 18); g.lineTo(mp + .5, 22); }
+      else { g.moveTo(18, mp + .5); g.lineTo(22, mp + .5); }
+    }
+    g.stroke();
+
+    // artboard extent highlight
+    const a0 = (0 * zoom) + (axis === 'h' ? vpt[4] : vpt[5]);
+    const a1 = ((axis === 'h' ? board.w : board.h) * zoom) + (axis === 'h' ? vpt[4] : vpt[5]);
+    g.fillStyle = 'rgba(232,180,74,.22)';
+    if (axis === 'h') g.fillRect(a0, 0, a1 - a0, 3); else g.fillRect(0, a0, 3, a1 - a0);
+  });
+}
+canvas.on('after:render', drawRulers);
+
+/* ---------- zoom & pan --------------------------------------------- */
+function setZoom(z, point) {
+  z = Math.min(8, Math.max(0.05, z));
+  if (point) canvas.zoomToPoint(point, z); else canvas.setZoom(z);
+  document.getElementById('zoomReadout').textContent = Math.round(z * 100) + '%';
+  canvas.requestRenderAll();
+}
+function zoomBy(f) {
+  setZoom(canvas.getZoom() * f, new fabric.Point(canvas.getWidth() / 2, canvas.getHeight() / 2));
+}
+function zoomToFit() {
+  const pad = 60;
+  const z = Math.min((canvas.getWidth() - pad) / board.w, (canvas.getHeight() - pad) / board.h);
+  canvas.setViewportTransform([z, 0, 0, z, (canvas.getWidth() - board.w * z) / 2, (canvas.getHeight() - board.h * z) / 2]);
+  setZoom(z);
+}
+canvas.on('mouse:wheel', function (opt) {
+  const e = opt.e;
+  if (e.ctrlKey || e.metaKey || !e.shiftKey) {
+    e.preventDefault(); e.stopPropagation();
+    setZoom(canvas.getZoom() * Math.pow(0.999, e.deltaY), new fabric.Point(e.offsetX, e.offsetY));
+  } else {
+    // shift + wheel pans horizontally
+    const vpt = canvas.viewportTransform; vpt[4] -= e.deltaY; canvas.requestRenderAll();
+  }
+});
+
+let isPanning = false, lastPos = null, spaceDown = false;
+canvas.on('mouse:down', function (opt) {
+  const e = opt.e;
+  // a focused sidebar input eats every keystroke — release it as soon as the
+  // pointer goes back to the canvas
+  if (document.activeElement && document.activeElement !== document.body &&
+      typeof document.activeElement.blur === 'function' &&
+      /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    document.activeElement.blur();
+  }
+  if (activeTool === 'pan' || spaceDown || e.altKey || e.button === 1) {
+    isPanning = true; canvas.selection = false;
+    lastPos = { x: e.clientX, y: e.clientY };
+    canvas.setCursor('grabbing');
+  }
+});
+canvas.on('mouse:move', function (opt) {
+  const e = opt.e;
+  if (isPanning && lastPos) {
+    const vpt = canvas.viewportTransform;
+    vpt[4] += e.clientX - lastPos.x;
+    vpt[5] += e.clientY - lastPos.y;
+    lastPos = { x: e.clientX, y: e.clientY };
+    canvas.requestRenderAll();
+  }
+  const p = canvas.getPointer(e);
+  document.getElementById('cursorPos').textContent = round1(cm(p.x)) + ' × ' + round1(cm(p.y)) + ' cm';
+});
+canvas.on('mouse:up', function () {
+  if (isPanning) { canvas.setViewportTransform(canvas.viewportTransform); isPanning = false; lastPos = null; }
+  canvas.selection = activeTool === 'select';
+});
+
+/* ------------------------------------------------------------------ */
+/* 3. OBJECT FACTORIES                                                 */
+/* ------------------------------------------------------------------ */
+// Mid-tone ink on purpose: the workspace is dark and the export is white, so a
+// near-black or near-white silhouette would vanish in one of the two.
+const INK = '#8a97a8';       // silhouette ink
+const FIXTURE_FILL = '#d7dee7';
+const FIXTURE_LINE = '#5a6675';
+
+function viewCenter() {
+  const z = canvas.getZoom(), vpt = canvas.viewportTransform;
+  return { x: (canvas.getWidth() / 2 - vpt[4]) / z, y: (canvas.getHeight() / 2 - vpt[5]) / z };
+}
+
+/** Product silhouette stamp */
+function makeProduct(item) {
+  const p = new fabric.Path(SIL[item.id], {
+    fill: INK, stroke: '', fillRule: 'evenodd', originX: 'center', originY: 'center',
+    name: item.label,
+    data: { kind: 'product', cat: item.cat, sil: item.id, sku: '', brand: '', colorway: '', price: '', facings: 1, lookId: null }
+  });
+  p.scaleToWidth(px(item.w));
+  return p;
+}
+
+/** Structural fixtures — every shelf-like surface is flagged as a snap target */
+function makeFixture(id) {
+  const R = (x, y, w, h, o) => new fabric.Rect(Object.assign({
+    left: x, top: y, width: px(w), height: px(h),
+    fill: FIXTURE_FILL, stroke: FIXTURE_LINE, strokeWidth: 1
+  }, o || {}));
+  const G = (objs, name, data) => new fabric.Group(objs, {
+    originX: 'center', originY: 'center', name: name, data: data || { kind: 'fixture' }
+  });
+
+  switch (id) {
+    case 'shelf':
+      return new fabric.Rect({ width: px(120), height: px(4), fill: '#b9c3cf', stroke: FIXTURE_LINE, strokeWidth: 1,
+        originX: 'center', originY: 'center', name: 'Shelf', data: { kind: 'fixture', snap: 'shelf' } });
+
+    case 'shelfBay': {
+      const parts = [];
+      for (let i = 0; i < 4; i++) parts.push(R(0, i * px(50), 140, 4, { fill: '#b9c3cf' }));
+      parts.push(R(-px(4), 0, 4, 154, { fill: '#cbd3dd' }));
+      parts.push(R(px(140), 0, 4, 154, { fill: '#cbd3dd' }));
+      return G(parts, 'Shelf bay', { kind: 'fixture', snap: 'shelf' });
+    }
+    case 'rail': {
+      const bar = R(0, px(6), 120, 3, { fill: '#8f9aa8' });
+      const l = R(0, 0, 3, 8, { fill: '#8f9aa8' }), r = R(px(117), 0, 3, 8, { fill: '#8f9aa8' });
+      return G([l, r, bar], 'Hanging rail', { kind: 'fixture', snap: 'rail' });
+    }
+    case 'gondola': {
+      const back = R(0, 0, 120, 180, { fill: '#eef2f6' });
+      const parts = [back];
+      for (let i = 1; i <= 3; i++) parts.push(R(0, i * px(45), 120, 4, { fill: '#b9c3cf' }));
+      return G(parts, 'Gondola', { kind: 'fixture', snap: 'shelf' });
+    }
+    case 'table': {
+      const top = R(0, 0, 140, 80, { rx: px(3), ry: px(3), fill: '#e3e9f0' });
+      const inner = R(px(8), px(8), 124, 64, { fill: 'transparent', stroke: '#b3bdca', strokeDashArray: [4, 4] });
+      return G([top, inner], 'Display table', { kind: 'fixture', snap: 'shelf' });
+    }
+    case 'podium': {
+      const t = R(0, 0, 70, 8, { fill: '#b9c3cf' });
+      const b = R(px(6), px(8), 58, 44, { fill: '#e3e9f0' });
+      return G([t, b], 'Podium', { kind: 'fixture', snap: 'shelf' });
+    }
+    case 'rack': {
+      const c = new fabric.Circle({ radius: px(45), fill: 'transparent', stroke: FIXTURE_LINE, strokeWidth: 2 });
+      const c2 = new fabric.Circle({ left: px(30), top: px(30), radius: px(15), fill: 'transparent', stroke: '#b3bdca', strokeWidth: 1 });
+      return G([c, c2], 'Round rack', { kind: 'fixture', snap: 'rail' });
+    }
+    case 'wall':
+      return new fabric.Rect({ width: px(200), height: px(250), fill: '#f2f5f8', stroke: '#98a4b3', strokeWidth: 2,
+        originX: 'center', originY: 'center', name: 'Wall segment', data: { kind: 'fixture' } });
+    case 'pillar':
+      return new fabric.Rect({ width: px(40), height: px(250), fill: '#dde4ec', stroke: '#98a4b3', strokeWidth: 1,
+        originX: 'center', originY: 'center', name: 'Pillar', data: { kind: 'fixture' } });
+    case 'cashdesk': {
+      const b = R(0, 0, 180, 60, { rx: px(2), ry: px(2), fill: '#cfd8e3' });
+      const t = new fabric.Text('CASH', { left: px(60), top: px(20), fontSize: px(16), fill: '#5a6675', fontFamily: 'Space Grotesk' });
+      return G([b, t], 'Cash desk', { kind: 'fixture' });
+    }
+    case 'fitting': {
+      const b = R(0, 0, 120, 120, { fill: '#eef2f6', stroke: '#98a4b3' });
+      const d = new fabric.Path('M0,0 L' + px(40) + ',0', { stroke: '#5a6675', strokeWidth: 2, left: px(10), top: px(118) });
+      const t = new fabric.Text('FITTING', { left: px(20), top: px(50), fontSize: px(12), fill: '#5a6675', fontFamily: 'Space Grotesk' });
+      return G([b, d, t], 'Fitting room', { kind: 'fixture' });
+    }
+    case 'floorline':
+      return new fabric.Line([0, 0, px(300), 0], { stroke: '#98a4b3', strokeWidth: 2, strokeDashArray: [10, 6],
+        originX: 'center', originY: 'center', name: 'Floor line', data: { kind: 'fixture' } });
+  }
+}
+
+/** Basic geometry */
+function makeShape(id) {
+  const base = { originX: 'center', originY: 'center', fill: '#aab6c5', stroke: '#5a6675', strokeWidth: 1, data: { kind: 'shape' } };
+  switch (id) {
+    case 'rect': return new fabric.Rect(Object.assign({ width: px(80), height: px(50), name: 'Rectangle' }, base));
+    case 'rounded': return new fabric.Rect(Object.assign({ width: px(80), height: px(50), rx: px(6), ry: px(6), name: 'Rounded box' }, base));
+    case 'circle': return new fabric.Circle(Object.assign({ radius: px(30), name: 'Circle' }, base));
+    case 'triangle': return new fabric.Triangle(Object.assign({ width: px(60), height: px(55), name: 'Triangle' }, base));
+    case 'polygon': return new fabric.Polygon(
+      [{ x: 0, y: -px(35) }, { x: px(33), y: -px(11) }, { x: px(20), y: px(28) }, { x: -px(20), y: px(28) }, { x: -px(33), y: -px(11) }],
+      Object.assign({ name: 'Polygon' }, base));
+    case 'line': return new fabric.Line([0, 0, px(120), 0], { stroke: '#3b4453', strokeWidth: 2, originX: 'center', originY: 'center', name: 'Line', data: { kind: 'shape' } });
+    case 'dashed': return new fabric.Line([0, 0, px(120), 0], { stroke: '#3b4453', strokeWidth: 2, strokeDashArray: [10, 6], originX: 'center', originY: 'center', name: 'Dashed line', data: { kind: 'shape' } });
+    case 'arrow': return new fabric.Path('M0,10 L70,10 L70,0 L100,15 L70,30 L70,20 L0,20 Z',
+      Object.assign({ name: 'Arrow' }, base, { fill: '#3b4453', stroke: '' }));
+  }
+}
+
+/** Zone / hotspot overlay */
+function makeZone(item) {
+  const rect = new fabric.Rect({
+    width: px(mode === 'wall' ? 120 : 260), height: px(mode === 'wall' ? 90 : 180),
+    fill: item.color + '2e', stroke: item.color, strokeWidth: 2, strokeDashArray: [8, 5], rx: px(3), ry: px(3)
+  });
+  const label = new fabric.Text(item.label.toUpperCase(), {
+    fontFamily: 'Space Grotesk', fontWeight: '700', fontSize: px(mode === 'wall' ? 9 : 22),
+    fill: item.color, left: px(6), top: px(5), charSpacing: 90
+  });
+  return new fabric.Group([rect, label], {
+    originX: 'center', originY: 'center', name: item.label + ' zone',
+    data: { kind: 'zone', zone: item.label }
+  });
+}
+
+/** Editable text / brand tag */
+function makeText(kind) {
+  const isTag = kind === 'tag';
+  const t = new fabric.Textbox(isTag ? 'BRAND / CATEGORY' : 'Double-click to edit', {
+    width: px(isTag ? 90 : 120),
+    fontSize: px(mode === 'wall' ? 10 : 26),
+    fontFamily: isTag ? 'Space Grotesk' : 'Inter',
+    fontWeight: isTag ? '700' : '400',
+    fill: isTag ? '#ffffff' : '#9aa7b8',
+    backgroundColor: isTag ? '#17202b' : '',
+    textAlign: isTag ? 'center' : 'left',
+    charSpacing: isTag ? 80 : 0,
+    originX: 'center', originY: 'center',
+    name: isTag ? 'Brand tag' : 'Text',
+    data: { kind: isTag ? 'tag' : 'text', brand: '' }
+  });
+  return t;
+}
+
+/** Drop an object onto the artboard */
+function addObject(obj, at) {
+  const c = at || viewCenter();
+  obj.set({ left: c.x, top: c.y });
+  if (obj.data && obj.data.kind === 'zone') { canvas.add(obj); canvas.sendToBack(obj); }
+  else canvas.add(obj);
+  canvas.setActiveObject(obj);
+  canvas.requestRenderAll();
+  pushHistory();
+  return obj;
+}
+
+function buildFromLibrary(tab, id, at) {
+  if (tab === 'collection') { placeCatalogItem(id, at); return; }
+  const item = LIBRARY[tab].items.find(i => i.id === id);
+  if (!item) return;
+  let obj;
+  if (item.kind === 'product') obj = makeProduct(item);
+  else if (item.kind === 'fixture') obj = makeFixture(item.id);
+  else if (item.kind === 'shape') obj = makeShape(item.id);
+  else if (item.kind === 'zone') obj = makeZone(item);
+  else if (item.kind === 'tag') obj = makeText(item.id === 'tagPrice' ? 'text' : 'tag');
+  if (item.id === 'tagPrice' && obj) obj.set({ text: '199.00 ₾', fontWeight: '600' });
+  if (obj) addObject(obj, at);
+}
+
+/* ---------- image import ------------------------------------------- */
+/** Photos are downscaled before they enter the project so localStorage
+ *  (a ~5 MB budget) never overflows on a wall full of reference shots. */
+function downscale(dataUrl, maxDim, cb) {
+  const im = new Image();
+  im.onload = () => {
+    const scale = Math.min(1, maxDim / Math.max(im.width, im.height));
+    if (scale === 1) { cb(dataUrl); return; }
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(im.width * scale); cv.height = Math.round(im.height * scale);
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    cb(cv.toDataURL('image/jpeg', 0.86));
+  };
+  im.onerror = () => cb(dataUrl);
+  im.src = dataUrl;
+}
+
+function importImage(file, at) {
+  const reader = new FileReader();
+  reader.onerror = () => toast('That file could not be read.');
+  reader.onload = e => downscale(e.target.result, 1600, url => {
+    fabric.Image.fromURL(url, img => {
+      const maxW = board.w * 0.45;
+      if (img.width > maxW) img.scaleToWidth(maxW);
+      img.set({ originX: 'center', originY: 'center', name: file.name, data: { kind: 'image', sku: '', brand: '' } });
+      addObject(img, at);
+      toast('Photo added — resize it from the corner handles.');
+    });
+  });
+  reader.readAsDataURL(file);
+}
+
+function setBackground(file) {
+  const reader = new FileReader();
+  reader.onerror = () => toast('That file could not be read.');
+  reader.onload = e => downscale(e.target.result, 2000, url => {
+    fabric.Image.fromURL(url, img => {
+      img.set({ scaleX: board.w / img.width, scaleY: board.h / img.height, opacity: .55, selectable: false });
+      canvas.setBackgroundImage(img, () => { canvas.requestRenderAll(); pushHistory(); });
+      toast('Blueprint set as the artboard background.');
+    });
+  });
+  reader.readAsDataURL(file);
+}
+
+
+/* ------------------------------------------------------------------ */
+/* 3b. COLLECTION LIBRARY — real product photography                   */
+/*     Photos are cleaned, trimmed, stored as base64 in localStorage    */
+/*     and carry their own SKU / price / colourway / size data.         */
+/* ------------------------------------------------------------------ */
+const CATALOG_KEY = 'merchstudio.catalog.v1';
+const readCatalog  = () => { try { return JSON.parse(localStorage.getItem(CATALOG_KEY)) || []; } catch (e) { return []; } };
+function writeCatalog(list) {
+  try { localStorage.setItem(CATALOG_KEY, JSON.stringify(list)); return true; }
+  catch (e) { toast('Browser storage is full — remove a few products or an old project.'); return false; }
+}
+
+/**
+ * Prepare an uploaded photo for the canvas:
+ *   1. scale it down to a sane working size,
+ *   2. optionally knock out a near-white studio background,
+ *   3. trim fully transparent margins so the bounding box hugs the product
+ *      (this is what makes shelf snapping sit flush instead of floating).
+ * Returns a PNG when transparency is involved, a JPEG otherwise.
+ */
+function cleanProductImage(dataUrl, cutout, maxDim, cb) {
+  const im = new Image();
+  im.onerror = () => cb(dataUrl, 0, 0);
+  im.onload = () => {
+    const scale = Math.min(1, maxDim / Math.max(im.width, im.height));
+    const w = Math.max(1, Math.round(im.width * scale));
+    const h = Math.max(1, Math.round(im.height * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(im, 0, 0, w, h);
+    let out = cv, transparent = false;
+
+    try {
+      const img = ctx.getImageData(0, 0, w, h);
+      const dat = img.data;
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          let a = dat[i + 3];
+          if (cutout && a > 0) {
+            const r = dat[i], g = dat[i + 1], b = dat[i + 2];
+            const hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+            if (lo > 238 && hi - lo < 12) { dat[i + 3] = 0; a = 0; transparent = true; }
+            else if (lo > 226 && hi - lo < 16) { dat[i + 3] = a = Math.round(a * 0.4); transparent = true; }
+          }
+          if (a > 12) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (cutout) ctx.putImageData(img, 0, 0);
+      if (maxX >= minX && maxY >= minY && (minX > 0 || minY > 0 || maxX < w - 1 || maxY < h - 1)) {
+        const cw = maxX - minX + 1, ch = maxY - minY + 1;
+        const c2 = document.createElement('canvas');
+        c2.width = cw; c2.height = ch;
+        c2.getContext('2d').drawImage(cv, minX, minY, cw, ch, 0, 0, cw, ch);
+        out = c2;
+      }
+    } catch (err) { /* pixel access blocked — fall back to the plain resize */ }
+
+    cb(out.toDataURL(transparent ? 'image/png' : 'image/jpeg', 0.86), out.width, out.height);
+  };
+  im.src = dataUrl;
+}
+
+function thumbOf(dataUrl, cb) {
+  const im = new Image();
+  im.onerror = () => cb(dataUrl);
+  im.onload = () => {
+    const scale = Math.min(1, 150 / Math.max(im.width, im.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(im.width * scale));
+    cv.height = Math.max(1, Math.round(im.height * scale));
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    cb(cv.toDataURL('image/png'));
+  };
+  im.src = dataUrl;
+}
+
+/** Guess a decent real-world width so a shoe doesn't land the size of a coat. */
+function guessWidthCm(name, ratio) {
+  const n = (name || '').toLowerCase();
+  if (/shoe|sneaker|heel|boot|pump|trainer|sandal/.test(n)) return 30;
+  if (/bag|tote|clutch|backpack/.test(n)) return 34;
+  if (/belt|wallet|cap|hat|sock|scarf/.test(n)) return 26;
+  if (/coat|jacket|dress|trench/.test(n)) return 50;
+  return ratio > 1.3 ? 34 : 44;              // tall shots read as apparel
+}
+
+function addFilesToCatalog(files) {
+  const list = [...files].filter(f => f.type.startsWith('image/'));
+  if (!list.length) return;
+  const cutout = $('optCutout').checked;
+  let done = 0;
+  toast('Preparing ' + list.length + ' photo' + (list.length > 1 ? 's' : '') + '…');
+
+  list.forEach(file => {
+    const r = new FileReader();
+    r.onerror = () => { if (++done === list.length) renderCatalog(); };
+    r.onload = ev => cleanProductImage(ev.target.result, cutout, 700, (src, w, h) => {
+      thumbOf(src, thumb => {
+        const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 40);
+        const item = {
+          id: 'c' + Date.now() + Math.random().toString(36).slice(2, 6),
+          name: name, sku: '', brand: '', price: '', colorway: '', sizes: '',
+          wCm: guessWidthCm(name, h / Math.max(1, w)),
+          src: src, thumb: thumb, ts: Date.now()
+        };
+        const cat = readCatalog();
+        cat.unshift(item);
+        if (!writeCatalog(cat)) { /* quota — item dropped, message already shown */ }
+        if (++done === list.length) { renderCatalog(); toast('Collection updated.'); }
+      });
+    });
+    r.readAsDataURL(file);
+  });
+}
+
+function renderCatalog() {
+  const grid = $('catalogGrid'); if (!grid) return;
+  const cat = readCatalog();
+  $('catalogCount').textContent = cat.length + (cat.length === 1 ? ' item' : ' items');
+  grid.innerHTML = '';
+  if (!cat.length) {
+    grid.innerHTML = '<p class="col-span-2 text-[11px] text-muted py-4 text-center">No photos yet. Upload your collection to start building data-rich walls.</p>';
+    return;
+  }
+  cat.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'relative rounded-xl border border-hairline bg-shell overflow-hidden hover:border-brass transition group';
+    card.draggable = true;
+    card.title = item.name + (item.sku ? ' · ' + item.sku : '');
+    card.innerHTML =
+      '<div class="h-20 flex items-center justify-center bg-graphite p-1.5">' +
+        '<img src="' + item.thumb + '" alt="" class="max-h-full max-w-full object-contain pointer-events-none" />' +
+      '</div>' +
+      '<div class="px-1.5 py-1">' +
+        '<div class="text-[10px] truncate text-chalk">' + esc(item.name || 'Untitled') + '</div>' +
+        '<div class="text-[9px] text-muted truncate font-mono">' + esc(item.sku || 'no SKU') + (item.price ? ' · ' + esc(item.price) : '') + '</div>' +
+      '</div>' +
+      '<button class="absolute top-1 right-1 tool-btn !w-6 !h-6 bg-graphite/80 opacity-0 group-hover:opacity-100" data-edit title="Edit details"><i class="fa-solid fa-pen text-[9px]"></i></button>';
+
+    card.querySelector('[data-edit]').onclick = ev => { ev.stopPropagation(); openProductModal(item.id); };
+    card.onclick = () => placeCatalogItem(item.id);
+    card.addEventListener('dragstart', ev => {
+      ev.dataTransfer.setData('text/plain', JSON.stringify({ tab: 'collection', id: item.id }));
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    grid.appendChild(card);
+  });
+}
+
+/** Place a catalogue photo on the artboard with its data attached. */
+function placeCatalogItem(id, at) {
+  const item = readCatalog().find(i => i.id === id);
+  if (!item) { toast('That product is no longer in the library.'); return; }
+  fabric.Image.fromURL(item.src, img => {
+    img.set({ originX: 'center', originY: 'center', name: item.name || 'Product' });
+    img.scaleToWidth(px(item.wCm || 35));
+    img.data = {
+      kind: 'product', cat: 'Collection', catalogId: item.id,
+      name: item.name, sku: item.sku, brand: item.brand, price: item.price,
+      colorway: item.colorway, sizes: item.sizes, facings: 1, lookId: null
+    };
+    addObject(img, at);
+  });
+}
+
+/* ---- product details modal ---------------------------------------- */
+let editingProductId = null;
+function openProductModal(id) {
+  const item = readCatalog().find(i => i.id === id); if (!item) return;
+  editingProductId = id;
+  $('prodThumb').src = item.thumb;
+  $('prodName').value = item.name || '';
+  $('prodSku').value = item.sku || '';
+  $('prodBrand').value = item.brand || '';
+  $('prodPrice').value = item.price || '';
+  $('prodColorway').value = item.colorway || '';
+  $('prodSizes').value = item.sizes || '';
+  $('prodWidth').value = item.wCm || 35;
+  $('modalProduct').classList.add('open');
+}
+$('prodSave').onclick = () => {
+  const cat = readCatalog();
+  const item = cat.find(i => i.id === editingProductId); if (!item) return;
+  Object.assign(item, {
+    name: $('prodName').value.trim(), sku: $('prodSku').value.trim(),
+    brand: $('prodBrand').value.trim(), price: $('prodPrice').value.trim(),
+    colorway: $('prodColorway').value.trim(), sizes: $('prodSizes').value.trim(),
+    wCm: Math.max(2, +$('prodWidth').value || 35)
+  });
+  if (writeCatalog(cat)) {
+    // keep copies already on the artboard in sync with the library
+    canvas.getObjects().forEach(o => {
+      if (o.data && o.data.catalogId === item.id) {
+        Object.assign(o.data, { name: item.name, sku: item.sku, brand: item.brand,
+                                price: item.price, colorway: item.colorway, sizes: item.sizes });
+        o.name = item.name;
+      }
+    });
+    renderCatalog(); refreshInspector(); closeModals();
+    toast('Details saved for "' + item.name + '".');
+  }
+};
+$('prodDelete').onclick = () => {
+  const cat = readCatalog().filter(i => i.id !== editingProductId);
+  if (writeCatalog(cat)) { renderCatalog(); closeModals(); toast('Removed from the library. Items already placed stay on the wall.'); }
+};
+$('fileCatalog').onchange = e => { addFilesToCatalog(e.target.files); e.target.value = ''; };
+$('btnCatalogClear').onclick = () => {
+  if (!readCatalog().length) return;
+  if (!confirm('Remove every photo from the collection library? Items already placed on walls are unaffected.')) return;
+  writeCatalog([]); renderCatalog();
+};
+
+/* ------------------------------------------------------------------ */
+/* 4. TOOLS, DRAWING & SNAPPING                                        */
+/* ------------------------------------------------------------------ */
+function setTool(tool) {
+  activeTool = tool;
+  document.querySelectorAll('#toolStrip .tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+  canvas.selection = tool === 'select';
+  canvas.skipTargetFind = tool === 'pan';
+  canvas.defaultCursor = tool === 'pan' ? 'grab' : (tool === 'eraser' ? 'crosshair' : 'default');
+  canvas.forEachObject(o => { if (o.evented !== false) o.selectable = tool === 'select' || tool === 'eraser'; });
+  canvas.requestRenderAll();
+}
+document.getElementById('toolStrip').addEventListener('click', e => {
+  const b = e.target.closest('[data-tool]'); if (b) setTool(b.dataset.tool);
+});
+
+/* ---- click-drag drawing for rect / circle / line -------------------- */
+let drawing = null, drawStart = null;
+canvas.on('mouse:down', opt => {
+  if (['rect', 'circle', 'line'].includes(activeTool) && !isPanning) {
+    const p = canvas.getPointer(opt.e);
+    drawStart = p;
+    if (activeTool === 'rect') drawing = new fabric.Rect({ left: p.x, top: p.y, width: 1, height: 1, fill: '#cfd8e3', stroke: '#3b4453', strokeWidth: 1, data: { kind: 'shape' }, name: 'Rectangle' });
+    if (activeTool === 'circle') drawing = new fabric.Ellipse({ left: p.x, top: p.y, rx: 1, ry: 1, fill: '#cfd8e3', stroke: '#3b4453', strokeWidth: 1, data: { kind: 'shape' }, name: 'Ellipse' });
+    if (activeTool === 'line') drawing = new fabric.Line([p.x, p.y, p.x, p.y], { stroke: '#3b4453', strokeWidth: 2, data: { kind: 'shape' }, name: 'Line' });
+    canvas.add(drawing);
+  }
+  if (activeTool === 'eraser' && opt.target) { canvas.remove(opt.target); pushHistory(); }
+});
+canvas.on('mouse:move', opt => {
+  if (!drawing || !drawStart) return;
+  const p = canvas.getPointer(opt.e);
+  if (drawing.type === 'rect') drawing.set({ left: Math.min(p.x, drawStart.x), top: Math.min(p.y, drawStart.y), width: Math.abs(p.x - drawStart.x), height: Math.abs(p.y - drawStart.y) });
+  if (drawing.type === 'ellipse') drawing.set({ left: Math.min(p.x, drawStart.x), top: Math.min(p.y, drawStart.y), rx: Math.abs(p.x - drawStart.x) / 2, ry: Math.abs(p.y - drawStart.y) / 2 });
+  if (drawing.type === 'line') drawing.set({ x2: p.x, y2: opt.e.shiftKey ? drawStart.y : p.y });
+  canvas.requestRenderAll();
+});
+canvas.on('mouse:up', () => {
+  if (drawing) {
+    const tiny = (drawing.width < 4 && drawing.height < 4);
+    if (tiny) canvas.remove(drawing); else { canvas.setActiveObject(drawing); pushHistory(); }
+    drawing = null; drawStart = null; setTool('select');
+  }
+});
+
+/* ---- snapping ------------------------------------------------------ */
+let snapFlash = null;
+function shelfTargets() {
+  return canvas.getObjects().filter(o => o.data && (o.data.snap === 'shelf' || o.data.snap === 'rail'));
+}
+canvas.on('object:moving', opt => {
+  const o = opt.target;
+  if (!snapOn) return;
+
+  // grid snap (fine step = 1/2 grid)
+  const step = px(gridCm / 2);
+  o.set({ left: Math.round(o.left / step) * step, top: Math.round(o.top / step) * step });
+
+  // product-to-shelf magnet
+  if (o.data && (o.data.kind === 'product' || o.data.kind === 'image')) {
+    const b = o.getBoundingRect(true);
+    const bottom = b.top + b.height, cx = b.left + b.width / 2;
+    let best = null;
+    shelfTargets().forEach(s => {
+      const sb = s.getBoundingRect(true);
+      if (cx < sb.left - 20 || cx > sb.left + sb.width + 20) return;
+      const surfaces = s.data.snap === 'rail' ? [sb.top + sb.height] : [sb.top];
+      surfaces.forEach(y => {
+        const d = Math.abs(bottom - y);
+        if (d < px(8) && (!best || d < best.d)) best = { d: d, y: y, s: s };
+      });
+    });
+    if (best) {
+      o.set({ top: o.top + (best.y - bottom) });
+      snapFlash = best.s.getBoundingRect(true);
+    } else snapFlash = null;
+  }
+});
+canvas.on('after:render', () => {
+  if (!snapFlash) return;
+  const ctx = canvas.getContext(), vpt = canvas.viewportTransform;
+  ctx.save();
+  ctx.setTransform(vpt[0], 0, 0, vpt[3], vpt[4], vpt[5]);
+  ctx.strokeStyle = '#3ecfb2'; ctx.lineWidth = 2 / canvas.getZoom();
+  ctx.beginPath(); ctx.moveTo(snapFlash.left, snapFlash.top); ctx.lineTo(snapFlash.left + snapFlash.width, snapFlash.top); ctx.stroke();
+  ctx.restore();
+});
+canvas.on('mouse:up', () => { if (snapFlash) { snapFlash = null; canvas.requestRenderAll(); } });
+
+/* live measurement readout while transforming */
+canvas.on('object:scaling', () => readSize());
+canvas.on('object:moving', () => readSize());
+canvas.on('object:rotating', () => readSize());
+function readSize() {
+  const o = canvas.getActiveObject();
+  const el = document.getElementById('sizeReadout');
+  if (!o) { el.textContent = '—'; return; }
+  el.textContent = round1(cm(o.getScaledWidth())) + ' × ' + round1(cm(o.getScaledHeight())) + ' cm · ' + Math.round(o.angle) + '°';
+}
+
+/* ------------------------------------------------------------------ */
+/* 4b. LIBRARY UI                                                      */
+/* ------------------------------------------------------------------ */
+const libGrid = document.getElementById('libGrid');
+let activeTab = 'apparel';
+
+function renderLibrary(tab) {
+  activeTab = tab;
+  document.querySelectorAll('#railTabs .rail-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('mediaPanel').classList.toggle('hidden', tab !== 'media');
+  document.getElementById('collectionPanel').classList.toggle('hidden', tab !== 'collection');
+  document.getElementById('looksPanel').classList.toggle('hidden', tab !== 'looks');
+  libGrid.innerHTML = '';
+
+  if (tab === 'collection') {
+    document.getElementById('libTitle').textContent = 'Collection library';
+    document.getElementById('libHint').textContent = 'Your real product photography, with SKU and price attached.';
+    renderCatalog(); return;
+  }
+  if (tab === 'media') { document.getElementById('libTitle').textContent = 'Text & images';
+    document.getElementById('libHint').textContent = 'Add annotations, price cards and reference photography.'; return; }
+  if (tab === 'looks') { document.getElementById('libTitle').textContent = 'Looks';
+    document.getElementById('libHint').textContent = 'Bundle items into a styled set the store must keep together.';
+    renderLooks(); renderStamps(); return; }
+
+  const lib = LIBRARY[tab];
+  document.getElementById('libTitle').textContent = lib.title;
+  document.getElementById('libHint').textContent = lib.hint;
+
+  lib.items.forEach(item => {
+    const card = document.createElement('button');
+    card.className = 'lib-card';
+    card.draggable = true;
+    card.dataset.id = item.id;
+    card.title = item.label;
+    if (item.kind === 'product') card.innerHTML = silSvg(SIL[item.id]) + '<span>' + item.label + '</span>';
+    else if (item.kind === 'zone') card.innerHTML = '<span style="width:30px;height:22px;border-radius:5px;border:2px dashed ' + item.color + ';background:' + item.color + '30;display:block"></span><span>' + item.label + '</span>';
+    else card.innerHTML = '<i class="fa-solid ' + item.icon + ' text-[19px] text-chalk"></i><span>' + item.label + '</span>';
+    card.addEventListener('click', () => buildFromLibrary(tab, item.id));
+    card.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', JSON.stringify({ tab: tab, id: item.id }));
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+    libGrid.appendChild(card);
+  });
+}
+document.getElementById('railTabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]'); if (b) renderLibrary(b.dataset.tab);
+});
+
+/* drag & drop onto the artboard */
+const dropHint = document.getElementById('dropHint');
+host.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; dropHint.classList.add('on'); });
+host.addEventListener('dragleave', () => dropHint.classList.remove('on'));
+host.addEventListener('drop', e => {
+  e.preventDefault(); dropHint.classList.remove('on');
+  const rect = host.getBoundingClientRect();
+  const z = canvas.getZoom(), vpt = canvas.viewportTransform;
+  const at = { x: (e.clientX - rect.left - vpt[4]) / z, y: (e.clientY - rect.top - vpt[5]) / z };
+  if (e.dataTransfer.files && e.dataTransfer.files.length) {
+    [...e.dataTransfer.files].filter(f => f.type.startsWith('image/')).forEach(f => importImage(f, at));
+    return;
+  }
+  try { const d = JSON.parse(e.dataTransfer.getData('text/plain')); buildFromLibrary(d.tab, d.id, at); } catch (err) {}
+});
+
+/* ------------------------------------------------------------------ */
+/* 5. INSPECTOR                                                        */
+/* ------------------------------------------------------------------ */
+const sec = name => document.querySelector('[data-sec="' + name + '"]');
+let syncing = false;
+
+function showSections(list) {
+  ['geom', 'style', 'text', 'merch', 'arrange', 'board'].forEach(s => sec(s).classList.toggle('hidden', !list.includes(s)));
+}
+
+function refreshInspector() {
+  const o = canvas.getActiveObject();
+  syncing = true;
+
+  if (!o) {
+    showSections(['board']);
+    $('selName').textContent = 'Nothing selected';
+    $('selMeta').textContent = 'Pick an object on the artboard to edit it.';
+    $('sizeReadout').textContent = '—';
+    syncing = false; return;
+  }
+
+  const kind = (o.data && o.data.kind) || o.type;
+  const isText = o.type === 'textbox' || o.type === 'i-text' || o.type === 'text';
+  const multi = o.type === 'activeSelection';
+
+  $('selName').textContent = multi ? o._objects.length + ' objects selected' : (o.name || kind);
+  const meta = [];
+  if (!multi && o.data) {
+    if (o.data.cat) meta.push(o.data.cat);
+    if (o.data.sku) meta.push(o.data.sku);
+    if (o.data.price) meta.push(o.data.price);
+    if (o.data.colorway) meta.push(o.data.colorway);
+  }
+  $('selMeta').textContent = multi ? 'Align, group or move them together.' : (meta.join(' · ') || kind);
+
+  const secs = ['geom', 'arrange'];
+  if (!multi) secs.push('style');
+  if (isText) secs.push('text');
+  if (!multi && ['product', 'image', 'tag'].includes(kind)) secs.push('merch');
+  showSections(secs);
+
+  $('inpX').value = round1(cm(o.left - (o.originX === 'center' ? o.getScaledWidth() / 2 : 0)));
+  $('inpY').value = round1(cm(o.top - (o.originY === 'center' ? o.getScaledHeight() / 2 : 0)));
+  $('inpW').value = round1(cm(o.getScaledWidth()));
+  $('inpH').value = round1(cm(o.getScaledHeight()));
+  $('inpR').value = Math.round(o.angle || 0);
+  $('inpO').value = Math.round((o.opacity == null ? 1 : o.opacity) * 100);
+
+  const fill = typeof o.fill === 'string' ? o.fill : (o._objects && o._objects[0] && o._objects[0].fill) || '#cfd8e3';
+  $('inpFill').value = /^#[0-9a-f]{6}$/i.test(fill) ? fill : '#cfd8e3';
+  $('inpStroke').value = /^#[0-9a-f]{6}$/i.test(o.stroke || '') ? o.stroke : '#3b4453';
+  $('inpStrokeW').value = o.strokeWidth || 0;
+  $('inpDashed').checked = !!(o.strokeDashArray && o.strokeDashArray.length);
+
+  if (isText) {
+    $('inpText').value = o.text || '';
+    $('inpFont').value = o.fontFamily || 'Inter';
+    $('inpFontSize').value = Math.round(o.fontSize || 16);
+  }
+  if (o.data && ['product', 'image', 'tag'].includes(kind)) {
+    $('inpName').value = o.data.name || o.name || '';
+    $('inpSizes').value = o.data.sizes || '';
+    $('inpSku').value = o.data.sku || '';
+    $('inpBrand').value = o.data.brand || '';
+    $('inpColorway').value = o.data.colorway || '';
+    $('inpPrice').value = o.data.price || '';
+    $('inpFacings').value = o.data.facings || 1;
+    $('lookNote').textContent = o.data.lookId ? 'Part of look "' + o.data.lookId + '".' : 'Not assigned to a look yet.';
+  }
+  readSize();
+  updateCapacityNote();
+  $('objCount').textContent = canvas.getObjects().length + ' objects';
+  syncing = false;
+}
+['selection:created', 'selection:updated', 'selection:cleared', 'object:modified'].forEach(ev => canvas.on(ev, refreshInspector));
+canvas.on('object:modified', updateCapacityNote);
+
+/* ---- write inspector values back to the object ---------------------- */
+function withActive(fn) {
+  const o = canvas.getActiveObject(); if (!o || syncing) return;
+  fn(o); o.setCoords(); canvas.requestRenderAll();
+}
+function applyFillDeep(o, color) {
+  if (o._objects) o._objects.forEach(ch => { if (ch.type !== 'text') ch.set('fill', color); });
+  else o.set('fill', color);
+}
+
+$('inpX').oninput = e => withActive(o => o.set({ left: px(+e.target.value) + (o.originX === 'center' ? o.getScaledWidth() / 2 : 0) }));
+$('inpY').oninput = e => withActive(o => o.set({ top: px(+e.target.value) + (o.originY === 'center' ? o.getScaledHeight() / 2 : 0) }));
+$('inpW').oninput = e => withActive(o => o.set({ scaleX: px(+e.target.value) / (o.width || 1) }));
+$('inpH').oninput = e => withActive(o => o.set({ scaleY: px(+e.target.value) / (o.height || 1) }));
+$('inpR').oninput = e => withActive(o => o.rotate(+e.target.value));
+$('inpO').oninput = e => withActive(o => o.set({ opacity: (+e.target.value) / 100 }));
+$('inpFill').oninput = e => withActive(o => applyFillDeep(o, e.target.value));
+$('inpStroke').oninput = e => withActive(o => o.set({ stroke: e.target.value }));
+$('inpStrokeW').oninput = e => withActive(o => o.set({ strokeWidth: +e.target.value }));
+$('inpDashed').onchange = e => withActive(o => o.set({ strokeDashArray: e.target.checked ? [10, 6] : null }));
+$('inpText').oninput = e => withActive(o => o.set({ text: e.target.value }));
+$('inpFont').onchange = e => withActive(o => o.set({ fontFamily: e.target.value }));
+$('inpFontSize').oninput = e => withActive(o => o.set({ fontSize: +e.target.value }));
+$('inpName').oninput = e => withActive(o => {
+  o.data = o.data || {}; o.data.name = e.target.value; o.name = e.target.value;
+  $('selName').textContent = e.target.value || 'Product';
+});
+['inpSku', 'inpBrand', 'inpColorway', 'inpPrice', 'inpSizes'].forEach(id => {
+  $(id).oninput = e => withActive(o => { o.data = o.data || {}; o.data[id.replace('inp', '').toLowerCase()] = e.target.value; });
+});
+$('inpFacings').oninput = e => withActive(o => { o.data.facings = Math.max(1, +e.target.value || 1); });
+
+document.querySelectorAll('[data-textcmd]').forEach(b => b.onclick = () => withActive(o => {
+  const c = b.dataset.textcmd;
+  if (c === 'bold') o.set({ fontWeight: o.fontWeight === 'bold' || o.fontWeight === '700' ? 'normal' : 'bold' });
+  if (c === 'italic') o.set({ fontStyle: o.fontStyle === 'italic' ? 'normal' : 'italic' });
+  if (c === 'left' || c === 'center') o.set({ textAlign: c });
+  pushHistory();
+}));
+
+/* colour swatches */
+const swWrap = $('swatches');
+PALETTE.forEach(col => {
+  const b = document.createElement('button');
+  b.className = 'h-6 rounded-md border border-hairline';
+  b.style.background = col; b.title = col;
+  b.onclick = () => { withActive(o => applyFillDeep(o, col)); $('inpFill').value = col; pushHistory(); };
+  swWrap.appendChild(b);
+});
+
+/* facings: shelf-capacity aware row stamping */
+/** The shelf (or rail, or table) a product is currently sitting on. */
+function shelfUnder(o) {
+  const b = o.getBoundingRect(true);
+  const bottom = b.top + b.height, cx = b.left + b.width / 2;
+  let best = null;
+  canvas.getObjects().filter(t => t.data && (t.data.snap === 'shelf' || t.data.snap === 'rail')).forEach(t => {
+    const sb = t.getBoundingRect(true);
+    if (cx < sb.left - px(5) || cx > sb.left + sb.width + px(5)) return;
+    const surface = t.data.snap === 'rail' ? sb.top + sb.height : sb.top;
+    const d = Math.abs(bottom - surface);
+    if (d < px(14) && (!best || d < best.d)) best = { d: d, rect: sb, obj: t };
+  });
+  return best;
+}
+
+const FACING_GAP = 4;                       // cm of air between facings
+
+function capacityFor(o) {
+  const shelf = shelfUnder(o);
+  if (!shelf) return null;
+  const unit = o.getScaledWidth() + px(FACING_GAP);
+  return { shelf: shelf, max: Math.max(1, Math.floor(shelf.rect.width / unit)) };
+}
+
+function updateCapacityNote() {
+  const o = canvas.getActiveObject();
+  const el = $('capacityNote');
+  if (!o || !o.data || !['product', 'image'].includes(o.data.kind)) { el.textContent = ''; return; }
+  const cap = capacityFor(o);
+  el.textContent = cap
+    ? 'This shelf holds ' + cap.max + ' facings at ' + round1(cm(o.getScaledWidth())) + ' cm wide.'
+    : 'Drop the item on a shelf or rail to read its capacity.';
+}
+
+/** Clone the selected product into a row: across the shelf if it is on one,
+ *  otherwise simply side-by-side from where it stands. */
+function stampRow(fillShelf) {
+  const o = canvas.getActiveObject();
+  if (!o || !o.data || !['product', 'image'].includes(o.data.kind)) { toast('Select a product first.'); return; }
+
+  const cap = capacityFor(o);
+  let n = Math.max(1, parseInt($('inpFacings').value, 10) || 1);
+  if (fillShelf) {
+    if (!cap) { toast('Put the item on a shelf first, then fill it.'); return; }
+    n = cap.max;
+    $('inpFacings').value = n;
+  } else if (cap && n > cap.max) {
+    n = cap.max;
+    $('inpFacings').value = n;
+    toast('Trimmed to ' + n + ' facings — that is all this shelf holds.');
+  }
+  o.data.facings = n;
+  if (n < 2) { updateCapacityNote(); return; }
+
+  const w = o.getScaledWidth();
+  let startLeft, stepX;
+  if (cap) {
+    // spread evenly inside the shelf, keeping a half-gap margin at each end
+    const inner = cap.shelf.rect.width - w * n;
+    stepX = w + (n > 1 ? inner / (n - 1) : 0);
+    startLeft = cap.shelf.rect.left + w / 2;
+    if (o.originX !== 'center') startLeft = cap.shelf.rect.left;
+  } else {
+    stepX = w + px(FACING_GAP);
+    startLeft = o.left;
+  }
+
+  const made = [];
+  let pending = n;
+  for (let i = 0; i < n; i++) {
+    o.clone(cl => {
+      cl.set({ left: startLeft + stepX * i, top: o.top });
+      cl.data = Object.assign({}, o.data, { facings: n });
+      made.push(cl);
+      if (--pending === 0) {
+        canvas.remove(o);                     // the original becomes facing #1
+        made.forEach(m => canvas.add(m));
+        canvas.discardActiveObject();
+        canvas.setActiveObject(new fabric.ActiveSelection(made, { canvas: canvas }));
+        canvas.requestRenderAll();
+        pushHistory();
+        toast(n + ' facings placed' + (cap ? ' across the shelf.' : '.'));
+      }
+    }, EXTRA_PROPS);
+  }
+}
+$('btnApplyFacings').onclick = () => stampRow(false);
+$('btnFillShelf').onclick = () => stampRow(true);
+
+/* ---- looks --------------------------------------------------------- */
+function renderLooks() {
+  const wrap = $('lookList'); wrap.innerHTML = '';
+  const looks = {};
+  canvas.getObjects().forEach(o => { if (o.data && o.data.lookId) (looks[o.data.lookId] = looks[o.data.lookId] || []).push(o); });
+  const keys = Object.keys(looks);
+  if (!keys.length) { wrap.innerHTML = '<p class="text-[11px] text-muted">No looks yet. Select two or more products and group them.</p>'; return; }
+  keys.forEach(k => {
+    const row = document.createElement('button');
+    row.className = 'w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-shell border border-hairline hover:border-brass text-[11.5px]';
+    row.innerHTML = '<span class="font-medium">' + k + '</span><span class="text-muted">' + looks[k].length + ' items</span>';
+    row.onclick = () => {
+      canvas.discardActiveObject();
+      const selection = new fabric.ActiveSelection(looks[k], { canvas: canvas });
+      canvas.setActiveObject(selection); canvas.requestRenderAll();
+    };
+    wrap.appendChild(row);
+  });
+}
+/* ---- lookbook stamps (reusable arrangements, shared across projects) ---- */
+const STAMP_KEY = 'merchstudio.lookbook.v1';
+const readStamps = () => { try { return JSON.parse(localStorage.getItem(STAMP_KEY)) || []; } catch (e) { return []; } };
+const writeStamps = list => { try { localStorage.setItem(STAMP_KEY, JSON.stringify(list)); return true; }
+  catch (e) { toast('Browser storage is full — delete a stamp or a project.'); return false; } };
+
+function renderStamps() {
+  const wrap = $('stampList'); if (!wrap) return;
+  const list = readStamps();
+  wrap.innerHTML = list.length ? '' : '<p class="text-[11px] text-muted">No stamps yet. Arrange a block, select it and save.</p>';
+  list.forEach((st, i) => {
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-1';
+    row.innerHTML =
+      '<button class="flex-1 text-left px-2.5 py-2 rounded-lg bg-shell border border-hairline hover:border-brass text-[11.5px]" data-use>' +
+        '<span class="font-medium">' + st.name + '</span>' +
+        '<span class="text-muted"> · ' + st.objects.length + ' items</span></button>' +
+      '<button class="tool-btn !w-8 !h-8 !text-coral" data-del title="Delete stamp"><i class="fa-solid fa-trash text-[11px]"></i></button>';
+    row.querySelector('[data-use]').onclick = () => stampLook(st);
+    row.querySelector('[data-del]').onclick = () => {
+      const l = readStamps(); l.splice(i, 1); writeStamps(l); renderStamps();
+    };
+    wrap.appendChild(row);
+  });
+}
+
+/** Drop a saved arrangement at the centre of the view, ready to be moved. */
+function stampLook(st) {
+  fabric.util.enlivenObjects(st.objects, objs => {
+    const g = new fabric.Group(objs, { originX: 'center', originY: 'center' });
+    const c = viewCenter();
+    g.set({ left: c.x, top: c.y });
+    canvas.add(g);
+    const sel = g.toActiveSelection();       // keep the parts editable, not welded
+    canvas.setActiveObject(sel);
+    canvas.requestRenderAll();
+    pushHistory();
+    toast('Stamped "' + st.name + '".');
+  }, '');
+}
+
+$('btnSaveStamp').onclick = () => {
+  const a = canvas.getActiveObject();
+  if (!a) { toast('Select the items you want to reuse.'); return; }
+  const objs = (a.type === 'activeSelection' ? a._objects : [a]);
+  const name = prompt('Name this stamp', objs.length + '-item block');
+  if (!name) return;
+  // serialise relative to the selection's own bounding box
+  const clones = [];
+  let pending = objs.length;
+  objs.forEach(o => o.clone(cl => {
+    if (a.type === 'activeSelection') {
+      const m = fabric.util.multiplyTransformMatrices(a.calcTransformMatrix(), o.calcTransformMatrix());
+      const d = fabric.util.qrDecompose(m);
+      cl.set({ left: d.translateX, top: d.translateY, angle: d.angle, scaleX: d.scaleX, scaleY: d.scaleY,
+               originX: 'center', originY: 'center' });
+    }
+    clones.push(cl.toObject(EXTRA_PROPS));
+    if (--pending === 0) {
+      const list = readStamps();
+      list.unshift({ name: name, ts: Date.now(), objects: clones });
+      if (writeStamps(list.slice(0, 30))) { renderStamps(); toast('Stamp "' + name + '" saved.'); }
+    }
+  }, EXTRA_PROPS));
+};
+
+$('btnMakeLook').onclick = () => {
+  const a = canvas.getActiveObject();
+  if (!a || a.type !== 'activeSelection') { toast('Select at least two items first.'); return; }
+  const name = prompt('Name this look', 'Look ' + (Math.floor(Math.random() * 90) + 10));
+  if (!name) return;
+  a._objects.forEach(o => { o.data = o.data || {}; o.data.lookId = name; });
+  renderLooks(); pushHistory();
+  toast('Look "' + name + '" saved with ' + a._objects.length + ' items.');
+};
+
+/* ------------------------------------------------------------------ */
+/* 6. HISTORY, CLIPBOARD, LAYERS, ALIGNMENT, SHORTCUTS                 */
+/* ------------------------------------------------------------------ */
+let history = [], hIndex = -1, historyLocked = false, histTimer = null;
+
+/**
+ * Snapshots are debounced so a drag records one state, not sixty.
+ * pushHistory(true) commits immediately — used by paste, duplicate and delete,
+ * where the very next keystroke may be an undo.
+ */
+function pushHistory(immediate) {
+  if (historyLocked) return;
+  clearTimeout(histTimer);
+  if (immediate === true) { commitHistory(); return; }
+  histTimer = setTimeout(commitHistory, 120);
+}
+function commitHistory() {
+  histTimer = null;
+  if (historyLocked) return;                 // re-checked here: the lock may have
+  const json = JSON.stringify(canvas.toJSON(EXTRA_PROPS));  // gone up while queued
+  if (json === history[hIndex]) return;
+  history = history.slice(0, hIndex + 1);
+  history.push(json);
+  if (history.length > 60) { history.shift(); hIndex--; }
+  hIndex = history.length - 1;
+  updateHistoryButtons();
+  $('objCount').textContent = canvas.getObjects().length + ' objects';
+}
+
+/** Step through history. The lock is held across the whole reload so the
+ *  object:added events it fires can never be mistaken for a new edit. */
+function restoreHistory(step) {
+  clearTimeout(histTimer);                   // drop anything queued before the jump
+  histTimer = null;
+  const target = hIndex + step;
+  if (target < 0) { toast('Nothing left to undo.'); return; }
+  if (target >= history.length) { toast('Nothing to redo.'); return; }
+
+  hIndex = target;
+  historyLocked = true;
+  safeLoad(history[hIndex], () => {
+    canvas.discardActiveObject();
+    applyZoneLock();
+    applyPaperState();
+    canvas.requestRenderAll();
+    // release on the next tick, after fabric has finished firing its own events
+    setTimeout(() => {
+      historyLocked = false;
+      updateHistoryButtons();
+      refreshInspector();
+    }, 0);
+  });
+}
+function updateHistoryButtons() {
+  $('btnUndo').disabled = hIndex <= 0;
+  $('btnRedo').disabled = hIndex >= history.length - 1;
+  $('btnUndo').style.opacity = hIndex <= 0 ? .35 : 1;
+  $('btnRedo').style.opacity = hIndex >= history.length - 1 ? .35 : 1;
+}
+['object:added', 'object:removed', 'object:modified'].forEach(ev => canvas.on(ev, () => pushHistory()));
+canvas.on('text:changed', () => pushHistory());
+
+$('btnUndo').onclick = () => restoreHistory(-1);
+$('btnRedo').onclick = () => restoreHistory(1);
+
+/* ---- delete / copy / paste / duplicate ------------------------------ */
+function deleteSelection() {
+  const a = canvas.getActiveObjects().filter(o => !(o.data && o.data.kind === 'background'));
+  if (!a.length) { toast('Select an object first.'); return; }
+  a.forEach(o => {
+    if (o.isEditing) o.exitEditing();
+    canvas.remove(o);
+  });
+  canvas.discardActiveObject();
+  canvas.requestRenderAll();
+  pushHistory(true);
+  refreshInspector();
+}
+$('btnDelete').onclick = deleteSelection;
+
+let clipboard = null;
+let lastPointer = null;                      // canvas coords, kept for paste-at-cursor
+canvas.on('mouse:move', opt => { lastPointer = canvas.getPointer(opt.e); });
+
+const PASTE_OFFSET = 18;
+
+function copySelection(done) {
+  const o = canvas.getActiveObject();
+  if (!o) { toast('Select something to copy first.'); return; }
+  o.clone(cl => {
+    clipboard = cl;
+    if (done) done(); else toast('Copied.');
+  }, EXTRA_PROPS);
+}
+
+/** Shared landing logic for paste and duplicate. */
+function dropClone(cl, at) {
+  canvas.discardActiveObject();
+  if (at) cl.set({ left: at.x, top: at.y });
+  else cl.set({ left: cl.left + PASTE_OFFSET, top: cl.top + PASTE_OFFSET });
+  cl.set({ evented: true, selectable: true });
+
+  if (cl.type === 'activeSelection') {
+    // a cloned selection holds its children in group-relative coordinates:
+    // attach it to the canvas first, then add each child, then recalculate
+    cl.canvas = canvas;
+    cl.forEachObject(o => { o.set({ evented: true, selectable: true }); canvas.add(o); });
+    cl.setCoords();
+  } else {
+    canvas.add(cl);
+  }
+  canvas.setActiveObject(cl);
+  canvas.requestRenderAll();
+  pushHistory(true);
+  refreshInspector();
+}
+
+/** atCursor: paste under the mouse when it is over the artboard area. */
+function pasteClipboard(atCursor) {
+  if (!clipboard) { toast('Nothing copied yet — press Ctrl+C first.'); return; }
+  clipboard.clone(cl => dropClone(cl, atCursor ? lastPointer : null), EXTRA_PROPS);
+}
+
+function duplicateSelection() {
+  const o = canvas.getActiveObject();
+  if (!o) { toast('Select something to duplicate first.'); return; }
+  o.clone(cl => dropClone(cl, null), EXTRA_PROPS);   // leaves the clipboard alone
+}
+$('btnDuplicate').onclick = duplicateSelection;
+$('btnLock').onclick = () => withActive(o => {
+  const locked = !o.lockMovementX;
+  o.set({ lockMovementX: locked, lockMovementY: locked, lockRotation: locked, lockScalingX: locked, lockScalingY: locked, hasControls: !locked });
+  toast(locked ? 'Object locked.' : 'Object unlocked.');
+  canvas.requestRenderAll();
+});
+
+/* ---- layer order ---------------------------------------------------- */
+document.querySelectorAll('[data-order]').forEach(b => b.onclick = () => {
+  const o = canvas.getActiveObject(); if (!o) return;
+  ({ front: () => canvas.bringToFront(o), forward: () => canvas.bringForward(o),
+     backward: () => canvas.sendBackwards(o), back: () => canvas.sendToBack(o) })[b.dataset.order]();
+  canvas.requestRenderAll(); pushHistory();
+});
+
+/* ---- alignment & distribution --------------------------------------- */
+document.querySelectorAll('[data-align]').forEach(b => b.onclick = () => {
+  const a = canvas.getActiveObject(); if (!a) return;
+  const how = b.dataset.align;
+
+  // single object aligns against the artboard, multi-selection against the group bounds
+  if (a.type !== 'activeSelection') {
+    const w = a.getScaledWidth(), h = a.getScaledHeight();
+    const cx = a.originX === 'center' ? w / 2 : 0, cy = a.originY === 'center' ? h / 2 : 0;
+    if (how === 'left') a.set({ left: cx });
+    if (how === 'centerH') a.set({ left: board.w / 2 - w / 2 + cx });
+    if (how === 'right') a.set({ left: board.w - w + cx });
+    if (how === 'top') a.set({ top: cy });
+    if (how === 'middle') a.set({ top: board.h / 2 - h / 2 + cy });
+    if (how === 'bottom') a.set({ top: board.h - h + cy });
+    a.setCoords(); canvas.requestRenderAll(); pushHistory(); return;
+  }
+
+  const items = a._objects, gw = a.width, gh = a.height;
+  items.forEach(o => {
+    const w = o.getScaledWidth(), h = o.getScaledHeight();
+    if (how === 'left') o.set({ left: -gw / 2 + w / 2 });
+    if (how === 'centerH') o.set({ left: 0 });
+    if (how === 'right') o.set({ left: gw / 2 - w / 2 });
+    if (how === 'top') o.set({ top: -gh / 2 + h / 2 });
+    if (how === 'middle') o.set({ top: 0 });
+    if (how === 'bottom') o.set({ top: gh / 2 - h / 2 });
+  });
+  if (how === 'distH' || how === 'distV') {
+    const key = how === 'distH' ? 'left' : 'top';
+    const span = how === 'distH' ? gw : gh;
+    const sorted = [...items].sort((p, q) => p[key] - q[key]);
+    const gap = span / Math.max(1, sorted.length - 1);
+    sorted.forEach((o, i) => o.set(key, -span / 2 + gap * i));
+  }
+  a.setCoords(); canvas.requestRenderAll(); pushHistory();
+});
+
+/* ---- keyboard shortcuts --------------------------------------------- */
+const SHORTCUTS = [
+  ['V', 'Select tool'], ['H / Space', 'Pan the workspace'], ['R / C / L', 'Rectangle, circle, line'],
+  ['E', 'Eraser'], ['T', 'Add text'], ['Ctrl + Z', 'Undo'], ['Ctrl + Y', 'Redo'],
+  ['Ctrl + C / V', 'Copy / paste at cursor'], ['Ctrl + X', 'Cut'], ['Ctrl + D', 'Duplicate'], ['Delete', 'Remove selection'],
+  ['Ctrl + A', 'Select all'], ['Ctrl + G', 'Group as look'], ['Ctrl + S', 'Save project'],
+  ['Ctrl + 0', 'Fit artboard'], ['Ctrl + +/-', 'Zoom in / out'], ['Arrows', 'Nudge 1 cm'], ['Shift + Arrows', 'Nudge 10 cm']
+];
+$('helpGrid').innerHTML = SHORTCUTS.map(s => '<div class="flex items-center gap-2"><kbd>' + s[0] + '</kbd><span class="text-muted">' + s[1] + '</span></div>').join('');
+
+function typingInField(e) {
+  const t = e.target;
+  return !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable));
+}
+
+/* Shortcuts are matched on e.code (the physical key), never on e.key.
+   e.key follows the active keyboard layout, so on a Georgian, Cyrillic or any
+   non-Latin layout Ctrl+C arrives as e.key === 'ც' and a key-based check
+   silently stops working. e.code stays 'KeyC' on every layout. */
+const CODE_TOOL = { KeyV: 'select', KeyH: 'pan', KeyR: 'rect', KeyC: 'circle', KeyL: 'line', KeyE: 'eraser' };
+
+document.addEventListener('keydown', e => {
+  const active = canvas.getActiveObject();
+  if (active && active.isEditing) return;              // typing inside a text box
+  if (typingInField(e)) { if (e.key === 'Escape') e.target.blur(); return; }
+
+  const ctrl = e.ctrlKey || e.metaKey;
+  const code = e.code;
+
+  if (code === 'Space' && !spaceDown) { spaceDown = true; canvas.defaultCursor = 'grab'; }
+
+  if (ctrl) {
+    switch (code) {
+      case 'KeyZ':
+        e.preventDefault();
+        restoreHistory(e.shiftKey ? 1 : -1);           // Ctrl+Shift+Z redoes
+        return;
+      case 'KeyY':
+        e.preventDefault(); restoreHistory(1); return;
+      case 'KeyC':
+        e.preventDefault(); copySelection(); return;
+      case 'KeyV':
+        e.preventDefault(); pasteClipboard(true); return;   // lands under the cursor
+      case 'KeyX':
+        e.preventDefault();
+        copySelection(() => { toast('Cut.'); deleteSelection(); });
+        return;
+      case 'KeyD':
+        e.preventDefault(); duplicateSelection(); return;
+      case 'KeyS':
+        e.preventDefault(); saveProject(); return;
+      case 'KeyA': {
+        e.preventDefault();
+        canvas.discardActiveObject();
+        const pickable = canvas.getObjects().filter(o => o.selectable && o.evented && !(o.data && o.data.kind === 'background'));
+        if (!pickable.length) return;
+        canvas.setActiveObject(new fabric.ActiveSelection(pickable, { canvas: canvas }));
+        canvas.requestRenderAll(); refreshInspector();
+        return;
+      }
+      case 'KeyG':
+        e.preventDefault(); $('btnMakeLook').click(); return;
+      case 'Digit0':
+      case 'Numpad0':
+        e.preventDefault(); zoomToFit(); return;
+      case 'Equal':
+      case 'NumpadAdd':
+        e.preventDefault(); zoomBy(1.15); return;
+      case 'Minus':
+      case 'NumpadSubtract':
+        e.preventDefault(); zoomBy(1 / 1.15); return;
+    }
+    return;                                            // leave other Ctrl combos to the browser
+  }
+
+  if (code === 'Delete' || code === 'Backspace') { e.preventDefault(); deleteSelection(); return; }
+  if (code === 'Escape') { canvas.discardActiveObject(); canvas.requestRenderAll(); refreshInspector(); return; }
+
+  if (CODE_TOOL[code]) { setTool(CODE_TOOL[code]); return; }
+  if (code === 'KeyT') { addObject(makeText('text')); return; }
+
+  if (code.startsWith('Arrow')) {
+    if (!active) return;
+    e.preventDefault();
+    const d = px(e.shiftKey ? 10 : 1);
+    if (code === 'ArrowLeft') active.set({ left: active.left - d });
+    if (code === 'ArrowRight') active.set({ left: active.left + d });
+    if (code === 'ArrowUp') active.set({ top: active.top - d });
+    if (code === 'ArrowDown') active.set({ top: active.top + d });
+    active.setCoords(); canvas.requestRenderAll(); pushHistory();
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space') { spaceDown = false; canvas.defaultCursor = activeTool === 'pan' ? 'grab' : 'default'; }
+});
+
+/* ------------------------------------------------------------------ */
+/* 7. MODES, PROJECTS, EXPORT, COMPLIANCE                              */
+/* ------------------------------------------------------------------ */
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/** loadFromJSON with a guard: a corrupt or half-written state never kills the app. */
+function safeLoad(json, done) {
+  try {
+    canvas.loadFromJSON(json, () => { try { canvas.renderAll(); } catch (e) {} done(); });
+  } catch (err) {
+    console.error('Could not read that layout:', err);
+    toast('That layout could not be read — starting a clean board.');
+    canvas.clear(); seedTemplate(mode); canvas.renderAll(); done();
+  }
+}
+
+/* ---- view modes ----------------------------------------------------- */
+const modeStates = { wall: null, floor: null };
+let compliance = [];
+
+function applyModeConfig(m) {
+  mode = m;
+  pxPerCm = MODES[m].pxPerCm;
+  gridCm = MODES[m].gridCm;
+  board = { w: MODES[m].boardCm.w * pxPerCm, h: MODES[m].boardCm.h * pxPerCm };
+  $('inpBoardW').value = MODES[m].boardCm.w;
+  $('inpBoardH').value = MODES[m].boardCm.h;
+  $('inpGridStep').value = gridCm;
+  document.querySelectorAll('#modeSwitch .mode-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+}
+
+function switchMode(m) {
+  if (m === mode) return;
+  modeStates[mode] = JSON.stringify(canvas.toJSON(EXTRA_PROPS));
+  applyModeConfig(m);
+  historyLocked = true;
+  canvas.clear();
+  canvas.backgroundColor = '#0e1116';
+  const saved = modeStates[m];
+  const after = () => {
+    historyLocked = false; applyZoneLock(); applyPaperState();
+    history = []; hIndex = -1; pushHistory();
+    zoomToFit(); refreshInspector();
+    toast(MODES[m].label + ' view.');
+  };
+  if (saved) safeLoad(saved, after);
+  else { seedTemplate(m); canvas.renderAll(); after(); }
+}
+document.getElementById('modeSwitch').addEventListener('click', e => {
+  const b = e.target.closest('[data-mode]'); if (b) switchMode(b.dataset.mode);
+});
+
+/* ---- starter templates ---------------------------------------------- */
+function seedTemplate(m) {
+  historyLocked = true;
+  if (m === 'wall') {
+    // The artboard boundary is the wall — no filled rectangle is added, so
+    // there is nothing to bump into while arranging products.
+    [70, 130, 190].forEach(y => {
+      const sh = makeFixture('shelf');
+      sh.set({ left: board.w / 2, top: px(y) });
+      sh.scaleToWidth(board.w * 0.7);
+      canvas.add(sh);
+    });
+    const rail = makeFixture('rail');
+    rail.set({ left: board.w / 2, top: px(30) }); rail.scaleToWidth(board.w * 0.7);
+    canvas.add(rail);
+    const tag = makeText('tag');
+    tag.set({ left: board.w / 2, top: px(14), text: 'WALL 01 · NEW SEASON' });
+    canvas.add(tag);
+  } else {
+    const room = new fabric.Rect({ left: 0, top: 0, width: board.w, height: board.h, fill: 'transparent', stroke: '#8f9aa8',
+      strokeWidth: 4, selectable: false, evented: false, hoverCursor: 'default',
+      excludeFromAlignment: true, name: 'Store perimeter', data: { kind: 'background' } });
+    canvas.add(room);
+    const entrance = makeZone(LIBRARY.zones.items[1]);
+    entrance.set({ left: board.w / 2, top: board.h - px(120) });
+    canvas.add(entrance); canvas.sendToBack(entrance); canvas.sendToBack(room);
+    const desk = makeFixture('cashdesk'); desk.set({ left: px(300), top: px(250) }); canvas.add(desk);
+    const t1 = makeFixture('table'); t1.set({ left: board.w / 2, top: px(500) }); canvas.add(t1);
+    const t2 = makeFixture('table'); t2.set({ left: board.w / 2 + px(300), top: px(500) }); canvas.add(t2);
+  }
+  historyLocked = false;
+}
+
+/* ---- artboard size --------------------------------------------------- */
+$('btnApplyBoard').onclick = () => {
+  const w = Math.max(50, +$('inpBoardW').value || 400), h = Math.max(50, +$('inpBoardH').value || 250);
+  MODES[mode].boardCm = { w: w, h: h };
+  gridCm = Math.max(1, +$('inpGridStep').value || 10);
+  MODES[mode].gridCm = gridCm;
+  board = { w: px(w), h: px(h) };
+  zoomToFit();
+  toast('Artboard set to ' + w + ' × ' + h + ' cm.');
+};
+
+/* ---- toggles --------------------------------------------------------- */
+/** Zone markers are backdrops: locked, they sit behind everything and never
+ *  steal a click from the products placed on top of them. */
+function applyZoneLock() {
+  canvas.getObjects().forEach(o => {
+    if (!o.data || o.data.kind !== 'zone') return;
+    o.set({ selectable: !zonesLocked, evented: !zonesLocked, hoverCursor: zonesLocked ? 'default' : 'move' });
+    if (zonesLocked) canvas.sendToBack(o);
+  });
+  canvas.requestRenderAll();
+}
+canvas.on('object:added', e => { if (e.target && e.target.data && e.target.data.kind === 'zone' && zonesLocked) applyZoneLock(); });
+
+/** Backdrop objects (the store perimeter) are scenery: locked, behind
+ *  everything, and never clickable. Nothing paints a solid white box. */
+function applyPaperState() {
+  canvas.getObjects().forEach(o => {
+    if (!o.data || o.data.kind !== 'background') return;
+    o.set({ selectable: false, evented: false, hoverCursor: 'default', visible: sheetMode !== 'off' });
+    canvas.sendToBack(o);
+  });
+  canvas.requestRenderAll();
+}
+canvas.on('object:added', e => {
+  if (e.target && e.target.data && e.target.data.kind === 'background') applyPaperState();
+});
+
+function syncToggles() {
+  $('btnGrid').style.color = showGrid ? '#e8b44a' : '';
+  $('btnRuler').style.color = showRuler ? '#e8b44a' : '';
+  $('btnSnap').style.color = snapOn ? '#e8b44a' : '';
+  $('btnZoneLock').style.color = zonesLocked ? '#e8b44a' : '';
+  const sheetIcon = { dark: 'moon', white: 'file', off: 'file-circle-xmark' }[sheetMode];
+  $('btnPaper').style.color = sheetMode === 'white' ? '#e8b44a' : '';
+  $('btnPaper').title = { dark: 'Artboard: dark (matches the UI). Click for white paper preview.',
+                          white: 'Artboard: white paper preview. Click to hide it.',
+                          off: 'Artboard: outline only. Click to go back to dark.' }[sheetMode];
+  $('btnPaper').innerHTML = '<i class="fa-solid fa-' + sheetIcon + '"></i>';
+  $('btnZoneLock').innerHTML = '<i class="fa-solid fa-' + (zonesLocked ? 'lock' : 'lock-open') + '"></i>';
+  $('rulerRow').style.display = showRuler ? 'flex' : 'none';
+  $('rulerLeft').style.display = showRuler ? 'block' : 'none';
+  $('snapState').innerHTML = '<i class="fa-solid fa-magnet text-[10px]"></i>' + (snapOn ? 'Snapping on' : 'Snapping off');
+  setTimeout(resizeCanvas, 0);
+}
+$('btnGrid').onclick = () => { showGrid = !showGrid; syncToggles(); canvas.requestRenderAll(); };
+$('btnRuler').onclick = () => { showRuler = !showRuler; syncToggles(); };
+$('btnSnap').onclick = () => { snapOn = !snapOn; syncToggles(); };
+$('btnZoneLock').onclick = () => {
+  zonesLocked = !zonesLocked; syncToggles(); applyZoneLock();
+  toast(zonesLocked ? 'Zone markers locked to the background.' : 'Zone markers are editable.');
+};
+$('btnPaper').onclick = () => {
+  sheetMode = { dark: 'white', white: 'off', off: 'dark' }[sheetMode];
+  syncToggles(); applyPaperState();
+  toast({ dark: 'Artboard follows the dark theme. Exports stay white.',
+          white: 'Paper preview — this is how the export will look.',
+          off: 'Artboard outline only.' }[sheetMode]);
+};
+$('btnZoomIn').onclick = () => zoomBy(1.15);
+$('btnZoomOut').onclick = () => zoomBy(1 / 1.15);
+$('btnZoomFit').onclick = zoomToFit;
+
+/* ---- media panel ------------------------------------------------------ */
+$('btnAddText').onclick = () => addObject(makeText('text'));
+$('btnAddTag').onclick = () => addObject(makeText('tag'));
+$('fileImage').onchange = e => { [...e.target.files].forEach(f => importImage(f)); e.target.value = ''; };
+$('fileBg').onchange = e => { if (e.target.files[0]) setBackground(e.target.files[0]); e.target.value = ''; };
+$('btnClearBg').onclick = () => { canvas.setBackgroundImage(null, () => { canvas.requestRenderAll(); pushHistory(); }); };
+
+/* ---- export ----------------------------------------------------------- */
+const EXPORT_MAX_PX = 4600;        // longest edge; keeps files openable
+const EXPORT_MIN_PAD_CM = 8;
+
+/**
+ * The frame to export: the artboard united with everything actually placed
+ * (so nothing nudged past the wall edge gets clipped), then a margin around
+ * the lot so the sheet reads as a presentation, not a tight crop.
+ */
+function exportBounds() {
+  let l = 0, t = 0, r = board.w, b = board.h;   // the wall itself is always included
+  canvas.getObjects().forEach(o => {
+    if (!o.visible) return;
+    const bb = o.getBoundingRect(true);          // absolute, ignores the viewport
+    if (!bb.width && !bb.height) return;
+    l = Math.min(l, bb.left);
+    t = Math.min(t, bb.top);
+    r = Math.max(r, bb.left + bb.width);
+    b = Math.max(b, bb.top + bb.height);
+  });
+
+  const pct = Math.min(30, Math.max(0, parseFloat($('inpExportPad').value)));
+  const pad = Math.max(px(EXPORT_MIN_PAD_CM), Math.max(r - l, b - t) * (isNaN(pct) ? 6 : pct) / 100);
+  return { left: l - pad, top: t - pad, width: (r - l) + pad * 2, height: (b - t) + pad * 2 };
+}
+
+function exportImage(format) {
+  const isJpeg = format === 'jpeg';
+  const vpt = canvas.viewportTransform.slice();
+  const bgWas = canvas.backgroundColor;
+  const sheetWas = sheetMode;
+  const active = canvas.getActiveObject();
+  canvas.discardActiveObject();
+
+  exporting = true;                              // no grid, no shadow, white sheet
+  if (sheetMode === 'off') { sheetMode = 'dark'; applyPaperState(); }
+  // a full-canvas white background covers the margin as well as the artboard,
+  // so the padding never comes out transparent (PNG) or black (JPEG)
+  canvas.backgroundColor = '#ffffff';
+  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+  canvas.renderAll();
+
+  const frame = exportBounds();
+  // 3× for print-grade output, eased back if that would produce a giant file
+  const multiplier = Math.max(1, Math.min(3, EXPORT_MAX_PX / Math.max(frame.width, frame.height)));
+
+  let url = '';
+  try {
+    url = canvas.toDataURL({
+      format: isJpeg ? 'jpeg' : 'png',
+      quality: 0.95,
+      multiplier: multiplier,
+      left: frame.left, top: frame.top, width: frame.width, height: frame.height
+    });
+  } catch (err) {
+    console.error('[MerchStudio] export failed:', err);
+    toast('The export failed — try hiding very large photos and export again.');
+  }
+
+  exporting = false;
+  canvas.backgroundColor = bgWas;
+  if (sheetWas !== sheetMode) { sheetMode = sheetWas; applyPaperState(); }
+  canvas.setViewportTransform(vpt);
+  if (active) canvas.setActiveObject(active);
+  canvas.requestRenderAll();
+  if (!url) return;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = ($('projectName').value || 'layout').replace(/\s+/g, '-').toLowerCase() + '-' + mode + '.' + (isJpeg ? 'jpg' : 'png');
+  a.click();
+  toast('Exported ' + Math.round(frame.width * multiplier) + ' × ' + Math.round(frame.height * multiplier) +
+        ' px on white, with a ' + round1(cm((frame.width - board.w) / 2)) + ' cm margin.');
+}
+$('btnExport').onclick = () => exportImage('png');
+$('btnExport').oncontextmenu = e => { e.preventDefault(); exportImage('jpeg'); };
+
+/* ------------------------------------------------------------------ */
+/* 7b. STORAGE — Firebase Firestore with a localStorage mirror         */
+/* ------------------------------------------------------------------ */
+/*  ► PASTE YOUR FIREBASE CONFIG HERE ◄
+ *  Firebase console → Project settings → Your apps → Web app → SDK setup.
+ *  Leave the placeholders in place and the app runs on localStorage alone,
+ *  exactly as before — nothing breaks, it just isn't shared.
+ *
+ *  In the console you also need:
+ *    1. Authentication → Sign-in method → Anonymous → Enable
+ *    2. Firestore Database → Create database
+ *    3. Rules (see the notes that came with this file)
+ */
+const FIREBASE_CONFIG = {
+  apiKey:            'AIzaSyAfHLuOuPFvKX2g7TN9Ja8PSd23y6A1nu0',
+  authDomain:        'vm-project-85937.firebaseapp.com',
+  projectId:         'vm-project-85937',
+  storageBucket:     'vm-project-85937.firebasestorage.app',
+  messagingSenderId: '715036818585',
+  appId:             '1:715036818585:web:39972d9aa1401850d2cc08'
+};
+const configLooksReal = () => !!FIREBASE_CONFIG.projectId && !/PASTE_/.test(JSON.stringify(FIREBASE_CONFIG));
+
+const LS_KEY = 'merchstudio.projects.v1';
+const WS_KEY = 'merchstudio.workspace';
+const MAX_VERSIONS = 15;
+const FIRESTORE_DOC_LIMIT = 1048576;             // 1 MiB, hard limit per document
+
+let workspaceId = localStorage.getItem(WS_KEY) || 'central-office';
+let cloud = { ready: false, db: null, uid: null, error: null };
+
+/* ---- state packing: gzip when the browser offers it ---------------------- */
+function bytesToB64(bytes) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(out);
+}
+function b64ToBytes(b64) {
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+async function packState(jsonStr) {
+  if (!jsonStr) return null;
+  if (typeof CompressionStream === 'undefined') return { z: false, v: jsonStr };
+  try {
+    const stream = new Blob([jsonStr]).stream().pipeThrough(new CompressionStream('gzip'));
+    const buf = await new Response(stream).arrayBuffer();
+    return { z: true, v: bytesToB64(new Uint8Array(buf)) };
+  } catch (e) { return { z: false, v: jsonStr }; }
+}
+async function unpackState(packed) {
+  if (!packed) return null;
+  if (typeof packed === 'string') return packed;   // written by an older build
+  if (!packed.z) return packed.v;
+  const stream = new Blob([b64ToBytes(packed.v)]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return await new Response(stream).text();
+}
+
+/* ---- local mirror (always written, so work survives offline) ------------- */
+const readAll  = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } };
+const writeAll = db => localStorage.setItem(LS_KEY, JSON.stringify(db));
+
+const Local = {
+  label: 'This browser',
+  list() { return Object.values(readAll()).sort((a, b) => b.updated - a.updated); },
+  get(id) { return readAll()[id] || null; },
+  put(project) {
+    const db = readAll();
+    db[project.id] = project;
+    try { writeAll(db); }
+    catch (err) {
+      project.versions = (project.versions || []).slice(0, 3);
+      db[project.id] = project;
+      try { writeAll(db); toast('Storage was full — older versions were dropped.'); }
+      catch (e2) { throw new Error('Browser storage is full. Export the layout, then delete an old project.'); }
+    }
+    return project;
+  },
+  remove(id) { const db = readAll(); delete db[id]; writeAll(db); },
+  versions(id) { const p = this.get(id); return p ? (p.versions || []) : []; }
+};
+
+/* ---- Firestore ----------------------------------------------------------- */
+const projectsRef = () => cloud.db.collection('workspaces').doc(workspaceId).collection('projects');
+
+const Cloud = {
+  label: 'Firestore',
+  async list() {
+    const snap = await projectsRef().orderBy('updated', 'desc').limit(60).get();
+    return snap.docs.map(d => {
+      const v = d.data();
+      return { id: d.id, name: v.name, tier: v.tier, mode: v.mode, boards: v.boards,
+               updated: v.updated && v.updated.toMillis ? v.updated.toMillis() : (v.updatedMs || 0),
+               versionCount: v.versionCount || 0, remote: true };
+    });
+  },
+  async get(id) {
+    const doc = await projectsRef().doc(id).get();
+    if (!doc.exists) return null;
+    const v = doc.data();
+    return {
+      id: doc.id, name: v.name, tier: v.tier, mode: v.mode, boards: v.boards,
+      updated: v.updatedMs || 0, compliance: v.compliance || [], remote: true,
+      states: { wall: await unpackState(v.wall), floor: await unpackState(v.floor) }
+    };
+  },
+  async put(project) {
+    const wall = await packState(project.states.wall);
+    const floor = await packState(project.states.floor);
+    const payload = {
+      name: project.name, tier: project.tier, mode: project.mode, boards: project.boards,
+      compliance: project.compliance || [], wall: wall, floor: floor,
+      ownerUid: cloud.uid, updatedMs: Date.now(),
+      updated: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    const size = JSON.stringify(payload).length;
+    if (size > FIRESTORE_DOC_LIMIT * 0.92) {
+      throw new Error('This project is ' + Math.round(size / 1024) + ' KB — over the 1 MB Firestore document limit. ' +
+                      'Remove a few photos or split the wall into two projects.');
+    }
+    const ref = projectsRef().doc(project.id);
+    // the previous state becomes a version, kept in a subcollection so the main
+    // document never grows with history
+    const prev = await ref.get();
+    if (prev.exists) {
+      const old = prev.data();
+      await ref.collection('versions').add({
+        ts: old.updatedMs || Date.now(), wall: old.wall || null, floor: old.floor || null, boards: old.boards || null
+      });
+      const extra = await ref.collection('versions').orderBy('ts', 'desc').get();
+      await Promise.all(extra.docs.slice(MAX_VERSIONS).map(d => d.ref.delete()));
+      payload.versionCount = Math.min(MAX_VERSIONS, extra.size + 1);
+    } else {
+      payload.versionCount = 0;
+    }
+    await ref.set(payload, { merge: true });
+    return project;
+  },
+  async remove(id) {
+    const ref = projectsRef().doc(id);
+    const vs = await ref.collection('versions').get();
+    await Promise.all(vs.docs.map(d => d.ref.delete()));
+    await ref.delete();
+  },
+  async versions(id) {
+    const snap = await projectsRef().doc(id).collection('versions').orderBy('ts', 'desc').limit(MAX_VERSIONS).get();
+    return Promise.all(snap.docs.map(async d => {
+      const v = d.data();
+      return { ts: v.ts, states: { wall: await unpackState(v.wall), floor: await unpackState(v.floor) }, boards: v.boards };
+    }));
+  }
+};
+
+/** Whichever backend is live. Cloud when Firebase is configured and reachable. */
+let store = Local;
+
+function setCloudPill(state, text) {
+  const icons = { ok: 'fa-cloud', local: 'fa-hard-drive', busy: 'fa-circle-notch fa-spin', bad: 'fa-triangle-exclamation' };
+  const colors = { ok: '#3ecfb2', local: '#8592a3', busy: '#8592a3', bad: '#ef6f6c' };
+  $('cloudPill').innerHTML = '<i class="fa-solid ' + icons[state] + ' text-[10px]"></i> <span id="cloudLabel">' + text + '</span>';
+  $('cloudPill').style.color = colors[state];
+}
+
+/** Turn Firebase error codes into something you can act on. */
+function firebaseHint(err) {
+  const code = (err && err.code) || '';
+  if (code === 'auth/operation-not-allowed')
+    return 'Anonymous sign-in is off. Firebase console → Authentication → Sign-in method → Anonymous → Enable.';
+  if (code === 'auth/unauthorized-domain' || code === 'auth/invalid-api-key')
+    return 'This domain is not authorised. Firebase console → Authentication → Settings → Authorized domains.';
+  if (code === 'permission-denied')
+    return 'Firestore rules are blocking this. Publish the rules from the setup notes.';
+  if (code === 'unavailable' || code === 'auth/network-request-failed')
+    return 'No connection to Firebase — working offline for now.';
+  if (code === 'failed-precondition')
+    return 'Firestore needs a database: console → Firestore Database → Create database.';
+  return (err && err.message) || 'Unknown error';
+}
+
+async function initCloud() {
+  if (!configLooksReal()) {
+    setCloudPill('local', 'Local only');
+    cloud.error = 'Firebase config not filled in';
+    return;
+  }
+  if (typeof firebase === 'undefined') {
+    setCloudPill('bad', 'SDK blocked');
+    cloud.error = 'The Firebase SDK did not load (offline, or blocked by the network)';
+    return;
+  }
+  try {
+    setCloudPill('busy', 'Connecting…');
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    cloud.db = firebase.firestore();
+    try { await cloud.db.enablePersistence({ synchronizeTabs: true }); } catch (e) { /* multi-tab or unsupported */ }
+    const cred = await firebase.auth().signInAnonymously();
+    cloud.uid = cred.user.uid;
+    cloud.ready = true;
+    store = Cloud;
+    setCloudPill('ok', workspaceId);
+    $('projectsSub').textContent = 'Shared across every device signed into this workspace.';
+  } catch (err) {
+    console.error('[MerchStudio] Firebase unavailable:', err);
+    cloud.error = firebaseHint(err);
+    store = Local;
+    setCloudPill('bad', 'Offline — local');
+    toast('Working locally. ' + cloud.error);
+  }
+}
+$('cloudPill').onclick = () => {
+  toast(cloud.ready ? 'Saving to Firestore workspace "' + workspaceId + '".'
+                    : 'Saving to this browser only. ' + (cloud.error || ''));
+};
+
+/* ---- project operations -------------------------------------------------- */
+function currentStates() {
+  modeStates[mode] = JSON.stringify(canvas.toJSON(EXTRA_PROPS));
+  return { wall: modeStates.wall, floor: modeStates.floor };
+}
+
+async function saveProject() {
+  const id = currentProjectId || 'p' + Date.now();
+  const project = {
+    id: id,
+    name: $('projectName').value || 'Untitled layout',
+    tier: $('storeTier').value,
+    updated: Date.now(),
+    mode: mode,
+    boards: { wall: MODES.wall.boardCm, floor: MODES.floor.boardCm },
+    states: currentStates(),
+    compliance: compliance
+  };
+
+  // local history list, kept for the mirror
+  const prev = Local.get(id);
+  const versions = (prev && prev.versions) || [];
+  if (prev) versions.unshift({ ts: prev.updated, states: prev.states, boards: prev.boards });
+  project.versions = versions.slice(0, MAX_VERSIONS);
+
+  setCloudPill('busy', 'Saving…');
+  try {
+    Local.put(project);                                  // mirror first: never lose work
+    if (store === Cloud) await Cloud.put(project);
+    currentProjectId = id;
+    setCloudPill(store === Cloud ? 'ok' : 'local', store === Cloud ? workspaceId : 'Local only');
+    toast('Saved to ' + store.label + ' · ' + project.name);
+  } catch (err) {
+    console.error('[MerchStudio] save failed:', err);
+    setCloudPill('bad', 'Save failed');
+    toast('Saved locally. Cloud save failed: ' + firebaseHint(err));
+  }
+}
+$('btnSave').onclick = () => { saveProject(); };
+
+function loadStates(p, states) {
+  currentProjectId = p.id;
+  $('projectName').value = p.name;
+  $('storeTier').value = p.tier || 'standard';
+  compliance = p.compliance || [];
+  if (p.boards) { MODES.wall.boardCm = p.boards.wall; MODES.floor.boardCm = p.boards.floor; }
+  modeStates.wall = states.wall; modeStates.floor = states.floor;
+  applyModeConfig(p.mode || 'wall');
+  historyLocked = true;
+  canvas.clear();
+  const json = states[mode];
+  const done = () => { historyLocked = false; applyZoneLock(); applyPaperState(); history = []; hIndex = -1; pushHistory(); zoomToFit(); refreshInspector(); renderCompliance(); };
+  if (json) safeLoad(json, done);
+  else { seedTemplate(mode); canvas.renderAll(); done(); }
+  closeModals();
+  toast('Opened "' + p.name + '".');
+}
+
+async function openProject(id) {
+  try {
+    const p = (store === Cloud ? await Cloud.get(id) : Local.get(id)) || Local.get(id);
+    if (!p) { toast('That project could not be found.'); return; }
+    loadStates(p, p.states);
+  } catch (err) { toast('Could not open it: ' + err.message); }
+}
+
+async function renderProjects() {
+  const list = $('projectList');
+  list.innerHTML = '<div class="text-center py-8 text-muted text-[12px]"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading…</div>';
+  let items = [];
+  try { items = await store.list(); }
+  catch (err) { toast('Could not read the cloud list: ' + err.message); items = Local.list(); }
+  if (store === Cloud) {                     // fold in anything saved offline
+    const localOnly = Local.list().filter(l => !items.some(r => r.id === l.id));
+    items = items.concat(localOnly.map(l => Object.assign({}, l, { remote: false })));
+    items.sort((a, b) => b.updated - a.updated);
+  }
+
+  if (!items.length) {
+    list.innerHTML = '<div class="text-center py-10 text-muted text-[12px]">No saved projects yet. Build a wall and press Save.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  items.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'bg-shell border border-hairline rounded-xl p-3';
+    const badge = p.remote === false
+      ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-raise text-muted">local only</span>'
+      : (store === Cloud ? '<span class="text-[9px] px-1.5 py-0.5 rounded" style="background:rgba(62,207,178,.15);color:#3ecfb2">synced</span>' : '');
+    card.innerHTML =
+      '<div class="flex items-center gap-3">' +
+        '<div class="w-9 h-9 rounded-lg bg-raise flex items-center justify-center text-brass"><i class="fa-solid fa-object-group"></i></div>' +
+        '<div class="flex-1 min-w-0">' +
+          '<div class="text-[13px] font-medium truncate">' + esc(p.name || 'Untitled') + ' ' + badge + '</div>' +
+          '<div class="text-[10.5px] text-muted">' + (p.updated ? new Date(p.updated).toLocaleString() : 'not saved yet') +
+            ' · ' + esc(p.tier || 'standard') + '</div>' +
+        '</div>' +
+        '<button class="nav-btn" data-act="versions">Versions</button>' +
+        '<button class="nav-btn" data-act="open">Open</button>' +
+        '<button class="tool-btn !text-coral" data-act="del" title="Delete"><i class="fa-solid fa-trash"></i></button>' +
+      '</div>' +
+      '<div class="mt-2 pl-12 flex flex-wrap gap-1.5 hidden" data-versions></div>';
+
+    card.querySelector('[data-act="open"]').onclick = () => openProject(p.id);
+    card.querySelector('[data-act="del"]').onclick = async () => {
+      if (!confirm('Delete "' + p.name + '" and its version history?')) return;
+      try { if (store === Cloud && p.remote !== false) await Cloud.remove(p.id); } catch (e) { toast(e.message); }
+      Local.remove(p.id);
+      renderProjects();
+    };
+    const vWrap = card.querySelector('[data-versions]');
+    card.querySelector('[data-act="versions"]').onclick = async () => {
+      vWrap.classList.toggle('hidden');
+      if (vWrap.dataset.loaded) return;
+      vWrap.dataset.loaded = '1';
+      vWrap.innerHTML = '<span class="text-[10px] text-muted">Loading…</span>';
+      let vs = [];
+      try { vs = (store === Cloud && p.remote !== false) ? await Cloud.versions(p.id) : Local.versions(p.id); }
+      catch (e) { vs = Local.versions(p.id); }
+      vWrap.innerHTML = vs.length ? '' : '<span class="text-[10px] text-muted">No earlier versions yet.</span>';
+      vs.forEach((v, i) => {
+        const b = document.createElement('button');
+        b.className = 'text-[10px] px-2 py-1 rounded-md bg-panel border border-hairline text-muted hover:text-brass hover:border-brass';
+        b.textContent = 'v' + (vs.length - i) + ' · ' + new Date(v.ts).toLocaleDateString();
+        b.onclick = () => loadStates(Object.assign({}, p, { boards: v.boards || p.boards, compliance: p.compliance || [] }), v.states);
+        vWrap.appendChild(b);
+      });
+    };
+    list.appendChild(card);
+  });
+}
+
+$('btnOpen').onclick = () => { $('inpWorkspace').value = workspaceId; $('modalProjects').classList.add('open'); renderProjects(); };
+$('btnRefreshProjects').onclick = () => renderProjects();
+$('btnWorkspace').onclick = () => {
+  const next = ($('inpWorkspace').value || '').trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+  if (!next) { toast('Give the workspace a name.'); return; }
+  workspaceId = next;
+  localStorage.setItem(WS_KEY, workspaceId);
+  if (cloud.ready) setCloudPill('ok', workspaceId);
+  renderProjects();
+  toast('Workspace switched to "' + workspaceId + '".');
+};
+
+$('btnNew').onclick = () => {
+  if (!confirm('Start a new project? Save first if you want to keep the current one.')) return;
+  currentProjectId = null; compliance = []; modeStates.wall = null; modeStates.floor = null;
+  $('projectName').value = 'Untitled layout';
+  applyModeConfig('wall');
+  historyLocked = true; canvas.clear(); seedTemplate('wall'); historyLocked = false; applyPaperState();
+  history = []; hIndex = -1; pushHistory(); zoomToFit(); refreshInspector(); renderCompliance();
+  toast('New project started.');
+};
+
+/* ---- compliance loop --------------------------------------------------- */
+/* A File object cannot survive localStorage, so the picked photo is read with
+   FileReader, downscaled, and kept as a base64 data URL from the moment it is
+   chosen. Everything downstream — the preview, the card, the saved project —
+   reads that same string. */
+let cmpPhotoData = null;      // base64 data URL, or null
+let cmpPhotoName = '';
+let cmpPhotoBusy = false;     // true while a file is still being read
+let cmpPendingAdd = false;    // "Add report" pressed before the read finished
+
+function setCmpPhoto(dataUrl, fileName) {
+  cmpPhotoData = dataUrl || null;
+  cmpPhotoName = fileName || '';
+  cmpPhotoBusy = false;
+  const wrap = $('cmpPreviewWrap');
+  if (cmpPhotoData) {
+    $('cmpPreview').src = cmpPhotoData;
+    $('cmpPreviewName').textContent = cmpPhotoName || 'Photo attached';
+    wrap.classList.remove('hidden');
+    wrap.classList.add('flex');
+    $('cmpPhotoLabel').textContent = 'Replace photo';
+  } else {
+    $('cmpPreview').removeAttribute('src');
+    wrap.classList.add('hidden');
+    wrap.classList.remove('flex');
+    $('cmpPhotoLabel').textContent = 'Choose file';
+  }
+  $('cmpAdd').innerHTML = '<i class="fa-solid fa-plus"></i> Add report';
+  if (cmpPendingAdd) { cmpPendingAdd = false; addReport(); }
+}
+
+$('cmpPhoto').onchange = e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';                       // lets the same file be picked again
+  if (!f) return;
+  if (!f.type.startsWith('image/')) { toast('Pick an image file.'); return; }
+  cmpPhotoBusy = true;
+  $('cmpPhotoLabel').textContent = 'Reading…';
+  const r = new FileReader();
+  r.onerror = () => { cmpPhotoBusy = false; cmpPendingAdd = false; $('cmpPhotoLabel').textContent = 'Choose file'; toast('That photo could not be read.'); };
+  r.onload = ev => downscale(ev.target.result, 1000, url => setCmpPhoto(url, f.name));
+  r.readAsDataURL(f);                        // -> base64 string, safe for storage
+};
+$('cmpClearPhoto').onclick = () => setCmpPhoto(null, '');
+
+function addReport() {
+  if (!$('cmpStore').value.trim()) { toast('Add the store name first.'); return; }
+  if (cmpPhotoBusy) {                        // wait for the read instead of saving null
+    cmpPendingAdd = true;
+    $('cmpAdd').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Reading photo…';
+    return;
+  }
+  compliance.unshift({
+    store: $('cmpStore').value.trim(),
+    status: $('cmpStatus').value,
+    note: $('cmpNote').value.trim(),
+    photo: cmpPhotoData,                     // base64 data URL or null
+    ts: Date.now()
+  });
+  setCmpPhoto(null, '');
+  $('cmpNote').value = '';
+  renderCompliance();
+  persistCompliance();
+}
+$('cmpAdd').onclick = addReport;
+
+/** Reports belong to the project. If it has been saved once, keep them on disk
+ *  straight away so they survive a reload without a second Save. */
+async function persistCompliance() {
+  if (!currentProjectId) { toast('Report added. Save the project to keep it.'); return; }
+  const p = Local.get(currentProjectId);
+  if (!p) { toast('Report added. Save the project to keep it.'); return; }
+  p.compliance = compliance;
+  try {
+    Local.put(p);
+    if (store === Cloud) await projectsRef().doc(currentProjectId).update({ compliance: compliance, updatedMs: Date.now() });
+    toast('Report added.');
+  } catch (err) { toast('Report saved locally: ' + err.message); }
+}
+
+function renderCompliance() {
+  const wrap = $('cmpList'); if (!wrap) return;
+  wrap.innerHTML = '';
+  if (!compliance.length) {
+    wrap.innerHTML = '<p class="col-span-3 text-[11.5px] text-muted text-center py-6">No store reports yet.</p>';
+    return;
+  }
+  compliance.forEach((c, i) => {
+    const badge = { approved: ['Approved', '#3ecfb2'], rework: ['Needs rework', '#ef6f6c'], pending: ['Awaiting review', '#e8b44a'] }[c.status] || ['Awaiting review', '#e8b44a'];
+    const d = document.createElement('div');
+    d.className = 'relative bg-shell border border-hairline rounded-xl overflow-hidden';
+
+    if (c.photo) {
+      const img = document.createElement('img');
+      img.className = 'w-full h-24 object-cover bg-raise';
+      img.alt = c.store + ' execution photo';
+      img.src = c.photo;                       // the stored base64 string
+      img.onerror = () => { img.remove(); d.insertAdjacentHTML('afterbegin', placeholder()); };
+      d.appendChild(img);
+    } else {
+      d.insertAdjacentHTML('beforeend', placeholder());
+    }
+
+    const body = document.createElement('div');
+    body.className = 'p-2';
+    body.innerHTML =
+      '<div class="text-[11.5px] font-medium truncate">' + esc(c.store) + '</div>' +
+      '<div class="text-[10px] mt-0.5" style="color:' + badge[1] + '">' + badge[0] + '</div>' +
+      '<div class="text-[9.5px] text-muted mt-0.5">' + new Date(c.ts).toLocaleDateString() + '</div>' +
+      (c.note ? '<div class="text-[10px] text-muted mt-1 leading-snug">' + esc(c.note) + '</div>' : '');
+    d.appendChild(body);
+
+    const del = document.createElement('button');
+    del.className = 'absolute top-1.5 right-1.5 tool-btn !w-7 !h-7 !text-coral bg-graphite/70';
+    del.title = 'Remove report';
+    del.innerHTML = '<i class="fa-solid fa-xmark text-[11px]"></i>';
+    del.onclick = () => { compliance.splice(i, 1); renderCompliance(); persistCompliance(); };
+    d.appendChild(del);
+
+    wrap.appendChild(d);
+  });
+}
+function placeholder() {
+  return '<div class="w-full h-24 bg-raise flex items-center justify-center text-muted"><i class="fa-solid fa-image"></i></div>';
+}
+function esc(str) {
+  return String(str == null ? '' : str).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+$('btnCompliance').onclick = () => { renderCompliance(); $('modalCompliance').classList.add('open'); };
+
+/* ---- modals ------------------------------------------------------------ */
+function closeModals() { document.querySelectorAll('.modal-wrap').forEach(m => m.classList.remove('open')); }
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeModals);
+document.querySelectorAll('.modal-wrap').forEach(m => m.addEventListener('click', e => { if (e.target === m) closeModals(); }));
+$('btnHelp').onclick = () => $('modalHelp').classList.add('open');
+
+/* ------------------------------------------------------------------ */
+/* 8. BOOT                                                             */
+/* ------------------------------------------------------------------ */
+(function init() {
+  try {
+  applyModeConfig('wall');
+  resizeCanvas();
+  renderLibrary('collection');
+  syncToggles();
+  seedTemplate('wall');
+  applyZoneLock();
+  applyPaperState();
+  zoomToFit();
+  history = []; hIndex = -1; pushHistory();
+  refreshInspector();
+  setTool('select');
+  $('inpWorkspace').value = workspaceId;
+  initCloud();                                   // async: the editor is usable immediately
+  setTimeout(() => toast('Upload your collection or drag a silhouette onto the wall to start.'), 600);
+  } catch (err) {
+    console.error('[MerchStudio] start-up failed:', err);
+    showFatal(err.message);
+    // last resort: a usable, empty dark board rather than a dead screen
+    try { canvas.clear(); zoomToFit(); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
