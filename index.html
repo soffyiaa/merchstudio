@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
 
 <!-- Firebase (compat builds: plain script tags, no bundler, no ES modules) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -127,6 +128,29 @@
   #canvasHost .canvas-container { position: absolute !important; inset: 0; }
   .ruler-corner { background: #171d25; border-right: 1px solid #2a323e; border-bottom: 1px solid #2a323e; }
 
+  /* --- top bar: never let a control fall off the edge --------------------- */
+  .hbar { overflow-x: auto; overflow-y: visible; scrollbar-width: thin; }
+  .hbar::-webkit-scrollbar { height: 5px; }
+  .hbar::-webkit-scrollbar-thumb { background: #2a323e; border-radius: 99px; }
+  .hbar::-webkit-scrollbar-thumb:hover { background: #3a4756; }
+  .hbar::-webkit-scrollbar-track { background: transparent; }
+
+  .menu-panel {
+    position: fixed; z-index: 90; min-width: 208px; padding: 5px;
+    background: #1a2029; border: 1px solid #2a323e; border-radius: 12px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.55); display: none;
+  }
+  .menu-panel.open { display: block; }
+  .menu-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; height: 34px;
+    padding: 0 10px; border-radius: 8px; font-size: 12.5px; color: #b9c3d0;
+    background: transparent; border: 0; text-align: left; transition: background .12s, color .12s;
+  }
+  .menu-item:hover { background: #222a35; color: #fff; }
+  .menu-item i { width: 14px; text-align: center; color: #8592a3; }
+  .menu-item:hover i { color: #e8b44a; }
+  .menu-sep { height: 1px; background: #2a323e; margin: 4px 6px; }
+
   /* --- misc --------------------------------------------------------------- */
   .modal-wrap { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(5,7,10,.72); backdrop-filter: blur(3px); }
   .modal-wrap.open { display: flex; }
@@ -152,59 +176,88 @@
   <!-- ==================================================================== -->
   <!-- TOP NAVBAR                                                            -->
   <!-- ==================================================================== -->
-  <header class="h-14 shrink-0 bg-shell border-b border-hairline flex items-center px-3 gap-3 z-30">
+  <header class="h-14 shrink-0 bg-shell border-b border-hairline flex items-center px-3 gap-2 z-30 hbar">
 
-    <!-- brand -->
-    <div class="flex items-center gap-2.5 pr-3 mr-1 border-r border-hairline h-8">
-      <div class="w-8 h-8 rounded-lg bg-brass flex items-center justify-center text-graphite">
+    <!-- brand: the wordmark folds away first, the mark never does -->
+    <div class="flex items-center gap-2.5 pr-2 mr-0.5 border-r border-hairline h-8 shrink-0">
+      <div class="w-8 h-8 rounded-lg bg-brass flex items-center justify-center text-graphite shrink-0">
         <i class="fa-solid fa-ruler-combined text-sm"></i>
       </div>
-      <div class="leading-none">
+      <div class="leading-none hidden 2xl:block">
         <div class="font-display font-bold text-[13px] tracking-tight text-chalk">MerchStudio</div>
         <div class="text-[9px] text-muted tracking-[.14em] uppercase mt-0.5">Rozlivka Planner</div>
       </div>
     </div>
 
-    <!-- project name -->
-    <input id="projectName" value="Untitled layout"
-           class="bg-panel border border-hairline rounded-lg h-9 px-3 text-[13px] w-52 focus:outline-none focus:border-brass"
-           placeholder="Project name" />
-
-    <!-- view mode switcher -->
-    <div class="mode-pill" id="modeSwitch">
-      <button class="mode-opt active" data-mode="wall"><i class="fa-solid fa-grip-lines-vertical text-[11px]"></i> Wall elevation</button>
-      <button class="mode-opt" data-mode="floor"><i class="fa-solid fa-vector-square text-[11px]"></i> Floor plan</button>
+    <!-- view switcher -->
+    <div class="mode-pill shrink-0" id="viewSwitch">
+      <button class="mode-opt active" data-view="editor" title="Planogram editor"><i class="fa-solid fa-pen-ruler text-[11px]"></i></button>
+      <button class="mode-opt" data-view="dashboard" title="Planograms dashboard"><i class="fa-solid fa-table-cells-large text-[11px]"></i></button>
+      <button class="mode-opt" data-view="inventory" title="Inventory &amp; product catalog"><i class="fa-solid fa-boxes-stacked text-[11px]"></i></button>
+      <button class="mode-opt" data-view="assortment" title="Assortment filters"><i class="fa-solid fa-filter text-[11px]"></i></button>
+      <button class="mode-opt" data-view="compliance" title="Compliance audit"><i class="fa-solid fa-camera-retro text-[11px]"></i></button>
     </div>
 
-    <!-- store tier -->
-    <select id="storeTier" class="input !w-36 !h-9" title="Store cluster / format">
+    <!-- project name: shrinks with the window instead of pushing neighbours out -->
+    <input id="projectName" value="Untitled layout" placeholder="Project name" title="Project name"
+           class="editor-only bg-panel border border-hairline rounded-lg h-9 px-3 text-[13px]
+                  w-28 lg:w-40 2xl:w-52 min-w-[96px] shrink focus:outline-none focus:border-brass" />
+
+    <!-- wall / floor: labels collapse to icons on narrower screens -->
+    <div class="mode-pill editor-only shrink-0" id="modeSwitch">
+      <button class="mode-opt active" data-mode="wall" title="Wall elevation">
+        <i class="fa-solid fa-grip-lines-vertical text-[11px]"></i><span class="hidden xl:inline">Wall elevation</span></button>
+      <button class="mode-opt" data-mode="floor" title="Floor plan">
+        <i class="fa-solid fa-vector-square text-[11px]"></i><span class="hidden xl:inline">Floor plan</span></button>
+    </div>
+
+    <select id="storeTier" class="input !w-[104px] !h-9 editor-only shrink-0" title="Store cluster / format">
       <option value="flagship">Flagship</option>
       <option value="standard" selected>Standard</option>
       <option value="small">Small format</option>
       <option value="outlet">Outlet</option>
     </select>
 
-    <div class="flex-1"></div>
+    <div class="flex-1 min-w-[8px]"></div>
 
-    <!-- history -->
-    <div class="flex items-center gap-1 pr-3 mr-1 border-r border-hairline h-8">
-      <button id="btnUndo" class="tool-btn" title="Undo (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i></button>
-      <button id="btnRedo" class="tool-btn" title="Redo (Ctrl+Y)"><i class="fa-solid fa-rotate-right"></i></button>
+    <!-- editing actions -->
+    <div class="flex items-center gap-1 pr-2 mr-0.5 border-r border-hairline h-8 editor-only shrink-0" id="historyGroup">
+      <button id="btnUndo" class="tool-btn !w-8" title="Undo (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i></button>
+      <button id="btnRedo" class="tool-btn !w-8" title="Redo (Ctrl+Y)"><i class="fa-solid fa-rotate-right"></i></button>
+      <button id="btnLockStruct" class="tool-btn !w-8" title="Lock all fixtures and backgrounds (Ctrl+L)"><i class="fa-solid fa-lock"></i></button>
+      <button id="btnMirror" class="tool-btn !w-8" title="Mirror selection (M)"><i class="fa-solid fa-right-left"></i></button>
+      <button id="btnAutoFill" class="tool-btn !w-8" title="Auto-fill the selected shelf (F)"><i class="fa-solid fa-wand-magic-sparkles"></i></button>
     </div>
 
-    <button id="btnNew" class="nav-btn"><i class="fa-solid fa-file-circle-plus"></i> New</button>
-    <button id="cloudPill" class="nav-btn" title="Storage status"><i class="fa-solid fa-circle-notch fa-spin text-[10px]"></i> <span id="cloudLabel">Starting…</span></button>
-    <button id="btnOpen" class="nav-btn"><i class="fa-solid fa-folder-open"></i> Projects</button>
-    <button id="btnCompliance" class="nav-btn"><i class="fa-solid fa-camera-retro"></i> Store report</button>
-    <button id="btnSave" class="nav-btn"><i class="fa-solid fa-cloud-arrow-up"></i> Save</button>
-    <button id="btnExport" class="nav-btn primary"><i class="fa-solid fa-file-image"></i> Export PNG</button>
-    <button id="btnHelp" class="tool-btn" title="Keyboard shortcuts"><i class="fa-solid fa-keyboard"></i></button>
+    <button id="cloudPill" class="nav-btn shrink-0" title="Storage status">
+      <i class="fa-solid fa-circle-notch fa-spin text-[10px]"></i>
+      <span id="cloudLabel" class="hidden 2xl:inline">Starting…</span>
+    </button>
+
+    <!-- the two actions worth a permanent slot -->
+    <button id="btnSave" class="nav-btn editor-only shrink-0" title="Save project (Ctrl+S)">
+      <i class="fa-solid fa-cloud-arrow-up"></i><span class="hidden lg:inline">Save</span></button>
+    <button id="btnExport" class="nav-btn primary editor-only shrink-0" title="Export PNG (right-click for JPEG)">
+      <i class="fa-solid fa-file-image"></i><span class="hidden lg:inline">Export</span></button>
+
+    <button id="btnMore" class="tool-btn shrink-0" title="More actions"><i class="fa-solid fa-ellipsis-vertical"></i></button>
   </header>
+
+  <!-- overflow menu: fixed, so the header's horizontal scroll can't clip it -->
+  <div class="menu-panel" id="moreMenu">
+    <button id="btnNew" class="menu-item editor-only"><i class="fa-solid fa-file-circle-plus"></i> New project</button>
+    <button id="btnOpen" class="menu-item editor-only"><i class="fa-solid fa-folder-open"></i> Projects…</button>
+    <div class="menu-sep"></div>
+    <button id="btnPdf" class="menu-item editor-only"><i class="fa-solid fa-file-pdf"></i> Generate PDF directive</button>
+    <button id="btnCompliance" class="menu-item editor-only"><i class="fa-solid fa-camera-retro"></i> Store report…</button>
+    <div class="menu-sep"></div>
+    <button id="btnHelp" class="menu-item"><i class="fa-solid fa-keyboard"></i> Keyboard shortcuts</button>
+  </div>
 
   <!-- ==================================================================== -->
   <!-- BODY: rail + library | canvas | inspector                             -->
   <!-- ==================================================================== -->
-  <div class="flex flex-1 min-h-0">
+  <div class="flex flex-1 min-h-0 app-view" id="viewEditor">
 
     <!-- ---------------- LEFT: icon rail ---------------- -->
     <nav class="w-[46px] shrink-0 bg-shell border-r border-hairline flex flex-col items-stretch py-1" id="railTabs">
@@ -316,6 +369,17 @@
         </div>
       </div>
 
+      <!-- issues bar -->
+      <div id="issuesBar" class="shrink-0 bg-shell border-t border-hairline text-[11px] hidden">
+        <button id="issuesToggle" class="w-full flex items-center gap-2 px-3 h-7 text-left">
+          <i class="fa-solid fa-triangle-exclamation text-[10px]" id="issuesIcon"></i>
+          <span id="issuesSummary">No issues</span>
+          <span class="flex-1"></span>
+          <i class="fa-solid fa-chevron-up text-[9px] text-muted" id="issuesChevron"></i>
+        </button>
+        <div id="issuesList" class="max-h-[136px] overflow-y-auto px-2 pb-2 space-y-1 hidden"></div>
+      </div>
+
       <!-- status bar -->
       <div class="h-8 shrink-0 bg-shell border-t border-hairline flex items-center px-3 gap-4 text-[11px] text-muted">
         <span class="flex items-center gap-1.5"><i class="fa-solid fa-crosshairs text-[10px]"></i><span class="readout" id="cursorPos">0 × 0 cm</span></span>
@@ -338,6 +402,17 @@
         <div class="sec-title">Inspector</div>
         <p class="text-[11px] mt-1.5 text-chalk font-medium" id="selName">Nothing selected</p>
         <p class="text-[10px] text-muted" id="selMeta">Pick an object on the artboard to edit it.</p>
+      </div>
+
+      <!-- LAYERS -->
+      <div class="border-b border-hairline">
+        <button id="layersToggle" class="w-full flex items-center gap-2 px-3 py-2 text-left">
+          <i class="fa-solid fa-chevron-down text-[9px] text-muted" id="layersChevron"></i>
+          <span class="sec-title !after:content-none">Layers</span>
+          <span class="flex-1"></span>
+          <span class="text-[10px] text-muted" id="layerCount">0</span>
+        </button>
+        <div id="layersBody" class="px-2 pb-2 max-h-[210px] overflow-y-auto space-y-0.5"></div>
       </div>
 
       <div class="flex-1 overflow-y-auto p-3 space-y-4" id="inspectorBody">
@@ -408,6 +483,18 @@
             <button id="btnApplyFacings" class="mini-btn"><i class="fa-solid fa-clone mr-1.5"></i>Stamp row</button>
             <button id="btnFillShelf" class="mini-btn"><i class="fa-solid fa-arrows-left-right-to-line mr-1.5"></i>Fill shelf</button>
           </div>
+          <div class="field"><label>Scale preset</label>
+            <div class="grid grid-cols-4 gap-1" id="presetChips"></div>
+          </div>
+          <select class="input !text-[11px]" id="presetKind" title="Which product family the S/M/L presets describe">
+            <option value="foldedTop">Folded top</option>
+            <option value="denimStack">Denim stack</option>
+            <option value="shoeBox">Shoe box</option>
+            <option value="shoePair">Shoe pair</option>
+            <option value="hangingTop">Hanging top</option>
+            <option value="bag">Bag</option>
+          </select>
+          <button id="btnSwap" class="mini-btn w-full"><i class="fa-solid fa-right-left mr-1.5"></i>Swap selection for another style</button>
           <p class="text-[10px] text-muted leading-relaxed" id="capacityNote"></p>
           <p class="text-[10px] text-muted leading-relaxed" id="lookNote"></p>
         </section>
@@ -433,6 +520,14 @@
             <button class="mini-btn" data-align="distH" title="Distribute horizontally"><i class="fa-solid fa-arrows-left-right mr-1.5"></i>Space H</button>
             <button class="mini-btn" data-align="distV" title="Distribute vertically"><i class="fa-solid fa-arrows-up-down mr-1.5"></i>Space V</button>
           </div>
+          <div class="grid grid-cols-2 gap-1">
+            <button class="mini-btn" id="btnMirrorPlace" title="Mirror in place (M)"><i class="fa-solid fa-right-left mr-1.5"></i>Mirror</button>
+            <button class="mini-btn" id="btnMirrorCopy" title="Mirror a copy to the opposite side of the wall"><i class="fa-solid fa-clone mr-1.5"></i>Mirror copy</button>
+          </div>
+          <div class="grid grid-cols-2 gap-1">
+            <button class="mini-btn" id="btnRepeat" title="Repeat the selection across the shelf (Shift+D)"><i class="fa-solid fa-grip mr-1.5"></i>Repeat →</button>
+            <input class="input !h-[30px]" id="inpRepeatCount" type="number" min="2" max="30" value="4" title="How many copies in total" />
+          </div>
           <div class="grid grid-cols-3 gap-1 pt-1">
             <button class="mini-btn" id="btnDuplicate" title="Duplicate (Ctrl+D)"><i class="fa-solid fa-copy"></i></button>
             <button class="mini-btn" id="btnLock" title="Lock / unlock"><i class="fa-solid fa-lock"></i></button>
@@ -456,6 +551,135 @@
         </section>
       </div>
     </aside>
+  </div>
+
+  <!-- ================= DASHBOARD ================= -->
+  <div class="app-view flex-1 min-h-0 overflow-y-auto hidden" id="viewDashboard">
+    <div class="max-w-[1180px] mx-auto p-6">
+      <div class="flex items-end gap-3 mb-5">
+        <div class="flex-1">
+          <h1 class="font-display font-bold text-[22px] tracking-tight">Planograms</h1>
+          <p class="text-[12px] text-muted mt-1" id="dashSub">Every wall and floor plan in this workspace.</p>
+        </div>
+        <input id="dashSearch" class="input !w-56 !font-sans" placeholder="Search by name or tier…" />
+        <select id="dashSort" class="input !w-40"><option value="updated">Newest first</option><option value="name">Name A–Z</option><option value="tier">Store tier</option></select>
+        <div class="mode-pill" id="dashLayout">
+          <button class="mode-opt active" data-layout="grid" title="Grid"><i class="fa-solid fa-table-cells-large text-[11px]"></i></button>
+          <button class="mode-opt" data-layout="list" title="List"><i class="fa-solid fa-list text-[11px]"></i></button>
+        </div>
+        <button id="dashNew" class="nav-btn primary"><i class="fa-solid fa-plus"></i> New planogram</button>
+      </div>
+      <div id="dashBody" class="grid grid-cols-4 gap-4"></div>
+    </div>
+  </div>
+
+  <!-- ================= INVENTORY ================= -->
+  <div class="app-view flex-1 min-h-0 overflow-y-auto hidden" id="viewInventory">
+    <div class="max-w-[1260px] mx-auto p-6">
+      <div class="flex items-end gap-3 mb-5">
+        <div class="flex-1">
+          <h1 class="font-display font-bold text-[22px] tracking-tight">Inventory &amp; product catalog</h1>
+          <p class="text-[12px] text-muted mt-1" id="invSub">Master products with real dimensions. Everything the planogram rules depend on lives here.</p>
+        </div>
+        <input id="invSearch" class="input !w-56 !font-sans" placeholder="Search SKU, name, brand…" />
+        <select id="invCategory" class="input !w-40"></select>
+        <label class="nav-btn primary cursor-pointer"><i class="fa-solid fa-cloud-arrow-up"></i> Upload products
+          <input type="file" id="invUpload" accept="image/*" class="hidden" multiple /></label>
+      </div>
+      <div class="grid grid-cols-4 gap-3 mb-5" id="invStats"></div>
+      <div class="bg-panel border border-hairline rounded-xl overflow-hidden">
+        <div class="grid grid-cols-[64px_1.6fr_1fr_1fr_1fr_130px_90px_92px] gap-2 px-3 py-2 text-[9.5px] uppercase tracking-[.1em] text-muted border-b border-hairline">
+          <span></span><span>Product / SKU</span><span>Brand</span><span>Supplier</span><span>Category</span>
+          <span>W × H × D (cm)</span><span>Status</span><span></span>
+        </div>
+        <div id="invRows" class="max-h-[58vh] overflow-y-auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= ASSORTMENT ================= -->
+  <div class="app-view flex-1 min-h-0 overflow-y-auto hidden" id="viewAssortment">
+    <div class="max-w-[1180px] mx-auto p-6">
+      <div class="flex items-end gap-3 mb-5">
+        <div class="flex-1">
+          <h1 class="font-display font-bold text-[22px] tracking-tight">Assortment</h1>
+          <p class="text-[12px] text-muted mt-1">Narrow the catalog to the range this planogram is allowed to carry. The editor, auto-fill and swap all obey it.</p>
+        </div>
+        <button id="assortClear" class="nav-btn"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+        <button id="assortApply" class="nav-btn primary"><i class="fa-solid fa-check"></i> Apply to editor</button>
+      </div>
+      <div class="grid grid-cols-[280px_1fr] gap-5">
+        <div class="space-y-4">
+          <div class="bg-panel border border-hairline rounded-xl p-3 space-y-3">
+            <div class="sec-title">Filters</div>
+            <div class="field"><label>Category</label><div id="fCategory" class="space-y-1"></div></div>
+            <div class="field"><label>Brand</label><div id="fBrand" class="space-y-1"></div></div>
+            <div class="field"><label>Supplier</label><div id="fSupplier" class="space-y-1"></div></div>
+            <div class="field"><label>Status</label><div id="fStatus" class="space-y-1"></div></div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="field"><label>Price min</label><input class="input" id="fPriceMin" type="number" placeholder="0" /></div>
+              <div class="field"><label>Price max</label><input class="input" id="fPriceMax" type="number" placeholder="—" /></div>
+            </div>
+            <label class="flex items-center gap-2 text-[11px] text-muted"><input type="checkbox" id="fDims" class="accent-brass" /> Only products with full dimensions</label>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-[12px] text-chalk font-medium" id="assortCount">0 products</span>
+            <span class="flex-1"></span>
+            <span class="text-[11px] text-muted" id="assortActive"></span>
+          </div>
+          <div id="assortGrid" class="grid grid-cols-5 gap-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= COMPLIANCE SPLIT VIEW ================= -->
+  <div class="app-view flex-1 min-h-0 flex flex-col hidden" id="viewCompliance">
+    <div class="flex items-center gap-3 px-4 py-3 border-b border-hairline bg-shell">
+      <div>
+        <h1 class="font-display font-bold text-[15px] tracking-tight">Execution audit</h1>
+        <p class="text-[11px] text-muted" id="cmpSub">Guideline on the left, the store's photo on the right.</p>
+      </div>
+      <div class="flex-1"></div>
+      <div class="mode-pill" id="cmpMode">
+        <button class="mode-opt active" data-cmp="split">Side by side</button>
+        <button class="mode-opt" data-cmp="overlay">Overlay</button>
+        <button class="mode-opt" data-cmp="swipe">Swipe</button>
+      </div>
+      <input id="cmpOpacity" type="range" min="0" max="100" value="50" class="w-32 accent-brass" title="Blend / swipe position" />
+      <label class="nav-btn cursor-pointer"><i class="fa-solid fa-camera"></i> Store photo
+        <input type="file" id="cmpAuditPhoto" accept="image/*" class="hidden" /></label>
+      <button id="cmpRefresh" class="nav-btn"><i class="fa-solid fa-rotate"></i> Refresh guideline</button>
+    </div>
+    <div class="flex-1 min-h-0 flex">
+      <div class="flex-1 min-w-0 relative bg-graphite" id="cmpStage">
+        <div class="absolute inset-0 flex" id="cmpSplit">
+          <div class="flex-1 relative border-r border-hairline overflow-hidden" id="cmpLeftPane">
+            <img id="cmpPlanImg" class="absolute inset-0 w-full h-full object-contain p-4" alt="Planogram" />
+            <span class="absolute top-2 left-3 text-[10px] uppercase tracking-[.14em] text-muted">Guideline</span>
+          </div>
+          <div class="flex-1 relative overflow-hidden" id="cmpRightPane">
+            <img id="cmpStoreImg" class="absolute inset-0 w-full h-full object-contain p-4" alt="Store photo" />
+            <div id="cmpNoPhoto" class="absolute inset-0 flex items-center justify-center text-muted text-[12px]">Upload the store's execution photo</div>
+            <span class="absolute top-2 left-3 text-[10px] uppercase tracking-[.14em] text-muted">Store</span>
+          </div>
+        </div>
+      </div>
+      <aside class="w-[300px] shrink-0 border-l border-hairline bg-panel p-3 space-y-3 overflow-y-auto">
+        <div class="sec-title">Review</div>
+        <div class="field"><label>Store</label><input class="input !font-sans" id="cmpAuditStore" placeholder="Tbilisi Galleria" /></div>
+        <div class="field"><label>Checklist</label><div id="cmpChecklist" class="space-y-1"></div></div>
+        <div class="field"><label>Note to store</label><textarea id="cmpAuditNote" rows="3" class="input !font-sans resize-none"></textarea></div>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="cmpApprove" class="nav-btn justify-center" style="border-color:#3ecfb2;color:#3ecfb2"><i class="fa-solid fa-check"></i> Approve</button>
+          <button id="cmpRework" class="nav-btn justify-center" style="border-color:#ef6f6c;color:#ef6f6c"><i class="fa-solid fa-rotate-left"></i> Rework</button>
+        </div>
+        <div class="sec-title pt-2">History</div>
+        <div id="cmpAuditList" class="space-y-2"></div>
+      </aside>
+    </div>
   </div>
 </div>
 
@@ -531,6 +755,57 @@
       <div class="flex-1"></div>
       <button class="nav-btn" data-close>Cancel</button>
       <button id="prodSave" class="nav-btn primary"><i class="fa-solid fa-check"></i> Save details</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-wrap" id="modalSwap">
+  <div class="bg-panel border border-hairline rounded-2xl w-[560px] max-h-[76vh] flex flex-col shadow-2xl">
+    <div class="p-4 border-b border-hairline flex items-center justify-between">
+      <div><h3 class="font-display font-bold text-[15px]">Swap selection</h3><p class="text-[11px] text-muted mt-0.5" id="swapCount">Pick the style that replaces every selected product.</p></div>
+      <button class="tool-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <label class="flex items-center gap-2 text-[11px] text-muted px-4 py-2 border-b border-hairline">
+      <input type="checkbox" id="swapKeepSize" class="accent-brass" />
+      Keep the current footprint instead of the new product's real dimensions
+    </label>
+    <div class="flex-1 overflow-y-auto p-3 grid grid-cols-4 gap-2" id="swapGrid"></div>
+  </div>
+</div>
+
+<div class="modal-wrap" id="modalAutoFill">
+  <div class="bg-panel border border-hairline rounded-2xl w-[520px] shadow-2xl">
+    <div class="p-4 border-b border-hairline flex items-center justify-between">
+      <div><h3 class="font-display font-bold text-[15px]">Auto-fill shelf</h3><p class="text-[11px] text-muted mt-0.5" id="fillTarget">Select a shelf first.</p></div>
+      <button class="tool-btn" data-close><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="p-4 space-y-3">
+      <div class="grid grid-cols-2 gap-2">
+        <div class="field"><label>Source</label>
+          <select class="input" id="fillSource"><option value="catalog">Collection library</option><option value="silhouettes">Apparel silhouettes</option></select>
+        </div>
+        <div class="field"><label>Brand filter</label><input class="input !font-sans" id="fillBrand" placeholder="Any brand" /></div>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div class="field"><label>Sort rule</label>
+          <select class="input" id="fillRule">
+            <option value="colour">Colour block</option>
+            <option value="size">Size run</option>
+            <option value="price">Price ladder</option>
+            <option value="name">Name A–Z</option>
+          </select>
+        </div>
+        <div class="field"><label>Facings each</label><input class="input" id="fillFacings" type="number" min="1" max="8" value="1" /></div>
+        <div class="field"><label>Gap (cm)</label><input class="input" id="fillGap" type="number" min="0" max="40" value="4" /></div>
+      </div>
+      <label class="flex items-center gap-2 text-[11px] text-muted">
+        <input type="checkbox" id="fillEven" class="accent-brass" checked /> Spread evenly across the shelf
+      </label>
+      <p class="text-[10.5px] text-muted leading-relaxed">Auto-fill gives you a starting point — adjust anything afterwards, it is a single undo step.</p>
+      <div class="flex gap-2">
+        <button class="nav-btn flex-1 justify-center" data-close>Cancel</button>
+        <button id="fillApply" class="nav-btn primary flex-1 justify-center"><i class="fa-solid fa-wand-magic-sparkles"></i> Fill shelf</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1286,7 +1561,7 @@ function addFilesToCatalog(files) {
 
 function renderCatalog() {
   const grid = $('catalogGrid'); if (!grid) return;
-  const cat = readCatalog();
+  const cat = assortedCatalog();          // respects the active assortment filter
   $('catalogCount').textContent = cat.length + (cat.length === 1 ? ' item' : ' items');
   grid.innerHTML = '';
   if (!cat.length) {
@@ -2049,7 +2324,9 @@ const SHORTCUTS = [
   ['E', 'Eraser'], ['T', 'Add text'], ['Ctrl + Z', 'Undo'], ['Ctrl + Y', 'Redo'],
   ['Ctrl + C / V', 'Copy / paste at cursor'], ['Ctrl + X', 'Cut'], ['Ctrl + D', 'Duplicate'], ['Delete', 'Remove selection'],
   ['Ctrl + A', 'Select all'], ['Ctrl + G', 'Group as look'], ['Ctrl + S', 'Save project'],
-  ['Ctrl + 0', 'Fit artboard'], ['Ctrl + +/-', 'Zoom in / out'], ['Arrows', 'Nudge 1 cm'], ['Shift + Arrows', 'Nudge 10 cm']
+  ['Ctrl + 0', 'Fit artboard'], ['Ctrl + +/-', 'Zoom in / out'], ['Arrows', 'Nudge 1 cm'], ['Shift + Arrows', 'Nudge 10 cm'],
+  ['M / Shift + M', 'Mirror in place / to opposite side'], ['Shift + D', 'Repeat face-outs'], ['F', 'Auto-fill shelf'],
+  ['Shift + S', 'Swap selection'], ['Ctrl + L', 'Lock fixtures'], ['Alt + drop', 'Free placement, no gravity']
 ];
 $('helpGrid').innerHTML = SHORTCUTS.map(s => '<div class="flex items-center gap-2"><kbd>' + s[0] + '</kbd><span class="text-muted">' + s[1] + '</span></div>').join('');
 
@@ -2544,7 +2821,8 @@ let store = Local;
 function setCloudPill(state, text) {
   const icons = { ok: 'fa-cloud', local: 'fa-hard-drive', busy: 'fa-circle-notch fa-spin', bad: 'fa-triangle-exclamation' };
   const colors = { ok: '#3ecfb2', local: '#8592a3', busy: '#8592a3', bad: '#ef6f6c' };
-  $('cloudPill').innerHTML = '<i class="fa-solid ' + icons[state] + ' text-[10px]"></i> <span id="cloudLabel">' + text + '</span>';
+  $('cloudPill').innerHTML = '<i class="fa-solid ' + icons[state] + ' text-[10px]"></i> ' +
+    '<span id="cloudLabel" class="hidden 2xl:inline">' + text + '</span>';
   $('cloudPill').style.color = colors[state];
 }
 
@@ -2890,6 +3168,1643 @@ document.querySelectorAll('.modal-wrap').forEach(m => m.addEventListener('click'
 $('btnHelp').onclick = () => $('modalHelp').classList.add('open');
 
 /* ------------------------------------------------------------------ */
+/* 9. PRO CANVAS ENGINE                                                */
+/*    Spatial index · smart guides · gravity + collision · locking      */
+/*    layers tree · scale presets · mirror · replication · bulk swap    */
+/*    rule engine + issues bar · auto-fill                              */
+/* ------------------------------------------------------------------ */
+
+const MIN_GAP_CM   = 3;      // air a merchandiser leaves between facings
+const GRAVITY_CM   = 40;     // how far a product falls to find a surface
+const SNAP_TOL_PX  = 6;      // screen-space tolerance, constant at any zoom
+const REACH_MIN_CM = 60;     // core product zone, measured from the floor
+const REACH_MAX_CM = 180;
+
+/* ---------- helpers -------------------------------------------------- */
+const isProduct  = o => !!o && !!o.data && (o.data.kind === 'product' || o.data.kind === 'image');
+const isFixture  = o => !!o && !!o.data && (o.data.kind === 'fixture' || o.data.kind === 'background');
+const isSurface  = o => !!o && !!o.data && (o.data.snap === 'shelf' || o.data.snap === 'rail');
+const nodeName   = o => o.name || (o.data && o.data.kind) || o.type;
+/** Absolute bounds in canvas coordinates, independent of origin or grouping. */
+const boundsOf   = o => o.getBoundingRect(true);
+/** The y a product's bottom should rest on for a given fixture. */
+const surfaceYof = f => { const b = boundsOf(f); return f.data.snap === 'rail' ? b.top + b.height : b.top; };
+
+/* ==================================================================== */
+/* 9a. SPATIAL INDEX                                                    */
+/*     Rebuilt once per drag; keeps neighbour queries off the O(n) path. */
+/* ==================================================================== */
+const SpatialGrid = {
+  cell: 0, buckets: new Map(), built: false,
+
+  rebuild(exclude) {
+    this.cell = Math.max(40, px(50));
+    this.buckets = new Map();
+    const skip = new Set((exclude || []).map(o => o));
+    canvas.getObjects().forEach(o => {
+      if (!o.visible || skip.has(o)) return;
+      const b = boundsOf(o);
+      for (let x = Math.floor(b.left / this.cell); x <= Math.floor((b.left + b.width) / this.cell); x++) {
+        for (let y = Math.floor(b.top / this.cell); y <= Math.floor((b.top + b.height) / this.cell); y++) {
+          const k = x + ':' + y;
+          if (!this.buckets.has(k)) this.buckets.set(k, []);
+          this.buckets.get(k).push(o);
+        }
+      }
+    });
+    this.built = true;
+  },
+
+  query(rect) {
+    if (!this.built) this.rebuild([]);
+    const out = new Set();
+    for (let x = Math.floor(rect.left / this.cell); x <= Math.floor((rect.left + rect.width) / this.cell); x++) {
+      for (let y = Math.floor(rect.top / this.cell); y <= Math.floor((rect.top + rect.height) / this.cell); y++) {
+        (this.buckets.get(x + ':' + y) || []).forEach(o => out.add(o));
+      }
+    }
+    return [...out];
+  },
+
+  invalidate() { this.built = false; }
+};
+['object:added', 'object:removed'].forEach(ev => canvas.on(ev, () => SpatialGrid.invalidate()));
+
+/* ==================================================================== */
+/* 9b. SMART GUIDES + CENTRE SNAPPING                                   */
+/* ==================================================================== */
+let guideV = [], guideH = [], gapBadges = [], dragCandidates = null;
+
+function collectCandidates(moving) {
+  const skip = new Set(moving);
+  const list = canvas.getObjects().filter(o => o.visible && !skip.has(o) && o.data && o.data.kind !== 'background');
+  SpatialGrid.rebuild(moving);
+  return list.map(o => {
+    const b = boundsOf(o);
+    return { o: o, left: b.left, right: b.left + b.width, cx: b.left + b.width / 2,
+             top: b.top, bottom: b.top + b.height, cy: b.top + b.height / 2, w: b.width, h: b.height };
+  });
+}
+
+function nearestSnap(values, targets, tol) {
+  let best = null;
+  targets.forEach(t => values.forEach(v => {
+    const d = v - t.v;
+    if (Math.abs(d) <= tol && (!best || Math.abs(d) < Math.abs(best.delta))) best = { delta: d, line: v, from: t.v };
+  }));
+  return best;
+}
+
+/** Runs on every object:moving; adjusts position and records the guides to paint. */
+function applyGuides(target) {
+  guideV = []; guideH = []; gapBadges = [];
+  if (!snapOn || !dragCandidates || !dragCandidates.length) return;
+
+  const tol = SNAP_TOL_PX / canvas.getZoom();
+  const b = boundsOf(target);
+  const selfV = [{ v: b.left }, { v: b.left + b.width / 2 }, { v: b.left + b.width }];
+  const selfH = [{ v: b.top }, { v: b.top + b.height / 2 }, { v: b.top + b.height }];
+
+  const vLines = [0, board.w / 2, board.w];
+  const hLines = [0, board.h / 2, board.h];
+  dragCandidates.forEach(c => { vLines.push(c.left, c.cx, c.right); hLines.push(c.top, c.cy, c.bottom); });
+
+  const sx = nearestSnap(vLines, selfV, tol);
+  if (sx) { target.left += sx.delta; guideV.push(sx.line); }
+  const sy = nearestSnap(hLines, selfH, tol);
+  if (sy) { target.top += sy.delta; guideH.push(sy.line); }
+
+  // equal spacing: match the gap to the left neighbour with the gap to the right
+  const nb = boundsOf(target);
+  const row = dragCandidates
+    .filter(c => c.top < nb.top + nb.height && c.bottom > nb.top)     // vertically overlapping
+    .sort((p, q) => p.cx - q.cx);
+  const leftN  = row.filter(c => c.right <= nb.left).pop();
+  const rightN = row.filter(c => c.left >= nb.left + nb.width)[0];
+  if (leftN && rightN) {
+    const gapL = nb.left - leftN.right;
+    const gapR = rightN.left - (nb.left + nb.width);
+    if (Math.abs(gapL - gapR) <= tol * 2) {
+      const centre = (leftN.right + rightN.left) / 2 - nb.width / 2;
+      target.left += centre - nb.left;
+      const g = (rightN.left - leftN.right - nb.width) / 2;
+      gapBadges = [
+        { x: leftN.right, y: nb.top + nb.height / 2, w: g },
+        { x: nb.left + nb.width + (centre - nb.left), y: nb.top + nb.height / 2, w: g }
+      ];
+    }
+  }
+  target.setCoords();
+}
+
+canvas.on('after:render', () => {
+  if (!guideV.length && !guideH.length && !gapBadges.length) return;
+  const ctx = canvas.getContext(), vpt = canvas.viewportTransform, z = canvas.getZoom();
+  ctx.save();
+  ctx.setTransform(vpt[0], vpt[1], vpt[2], vpt[3], vpt[4], vpt[5]);
+  ctx.strokeStyle = '#ff4fd8';
+  ctx.lineWidth = 1 / z;
+  ctx.setLineDash([6 / z, 5 / z]);
+  ctx.beginPath();
+  guideV.forEach(x => { ctx.moveTo(x, -1e5); ctx.lineTo(x, 1e5); });
+  guideH.forEach(y => { ctx.moveTo(-1e5, y); ctx.lineTo(1e5, y); });
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  gapBadges.forEach(gb => {
+    ctx.strokeStyle = '#3ecfb2';
+    ctx.beginPath(); ctx.moveTo(gb.x, gb.y); ctx.lineTo(gb.x + gb.w, gb.y); ctx.stroke();
+    ctx.fillStyle = '#3ecfb2';
+    ctx.font = (11 / z) + 'px "JetBrains Mono", monospace';
+    ctx.fillText(round1(cm(gb.w)) + ' cm', gb.x + gb.w / 2 - (14 / z), gb.y - (5 / z));
+  });
+  ctx.restore();
+});
+
+/* ==================================================================== */
+/* 9c. GRAVITY, COLLISION & FREE-SLOT PACKING                           */
+/* ==================================================================== */
+let freePlacement = false;          // held while Alt is down at drop time
+
+/** Fixture whose surface is directly under this product, within GRAVITY_CM. */
+function surfaceUnder(o, maxCm) {
+  const b = boundsOf(o), bottom = b.top + b.height, cx = b.left + b.width / 2;
+  let best = null;
+  canvas.getObjects().filter(isSurface).forEach(f => {
+    if (f === o) return;
+    const fb = boundsOf(f);
+    if (cx < fb.left - px(4) || cx > fb.left + fb.width + px(4)) return;
+    const y = surfaceYof(f);
+    const drop = y - bottom;
+    // Forgiving upwards: a product dragged so it visually overlaps the shelf
+    // should still seat on it. Allow the surface to sit up to 60% of the
+    // product's height above its bottom edge before we call it "not this shelf".
+    const tolAbove = Math.max(px(3), b.height * 0.6);
+    if (drop < -tolAbove) return;
+    if (drop > px(maxCm == null ? GRAVITY_CM : maxCm)) return;
+    if (!best || drop < best.drop) best = { fixture: f, y: y, drop: drop, rect: fb };
+  });
+  return best;
+}
+
+/** Occupied intervals along a surface, in canvas x, padded by the minimum gap. */
+function occupiedIntervals(fixture, exclude) {
+  const y = surfaceYof(fixture), fb = boundsOf(fixture), pad = px(MIN_GAP_CM);
+  return canvas.getObjects()
+    .filter(o => isProduct(o) && o !== exclude && o.visible)
+    .filter(o => {
+      const b = boundsOf(o);
+      return Math.abs((b.top + b.height) - y) < px(6) &&
+             b.left + b.width > fb.left - pad && b.left < fb.left + fb.width + pad;
+    })
+    .map(o => { const b = boundsOf(o); return { a: b.left - pad, b: b.left + b.width + pad, o: o }; })
+    .sort((p, q) => p.a - q.a);
+}
+
+/** Nearest free x for `width`, searching outward from `preferredLeft`. */
+function findFreeSlot(fixture, width, preferredLeft, exclude) {
+  const fb = boundsOf(fixture);
+  const taken = occupiedIntervals(fixture, exclude);
+  const gaps = [];
+  let cursor = fb.left;
+  taken.forEach(t => { if (t.a - cursor >= width) gaps.push({ from: cursor, to: t.a }); cursor = Math.max(cursor, t.b); });
+  if (fb.left + fb.width - cursor >= width) gaps.push({ from: cursor, to: fb.left + fb.width });
+  if (!gaps.length) return null;
+  let best = null;
+  gaps.forEach(g => {
+    const x = Math.min(Math.max(preferredLeft, g.from), g.to - width);
+    const d = Math.abs(x - preferredLeft);
+    if (!best || d < best.d) best = { x: x, d: d };
+  });
+  return best ? best.x : null;
+}
+
+/** Runs on drop. Gravity → collision → flush landing, or a bounce-back. */
+function resolveDrop(target) {
+  if (freePlacement || !snapOn) return true;
+  const items = target.type === 'activeSelection' ? target._objects : [target];
+  if (!items.some(isProduct)) return true;
+  if (target.type === 'activeSelection') return true;        // groups keep their arrangement
+
+  const o = target;
+  if (!isProduct(o)) return true;
+
+  const found = surfaceUnder(o);
+  if (!found) return true;                                   // free space: leave it alone
+
+  const b = boundsOf(o);
+  o.set({ top: o.top + (found.y - (b.top + b.height)) });     // gravity: sit flush
+  o.setCoords();
+
+  const nb = boundsOf(o);
+  const x = findFreeSlot(found.fixture, nb.width, nb.left, o);
+  if (x === null) {
+    if (o._preDrag) { o.set({ left: o._preDrag.left, top: o._preDrag.top }); o.setCoords(); }
+    flashFixture(found.fixture, '#ef6f6c');
+    toast('That shelf is full — nothing fits at this size.');
+    return false;
+  }
+  o.set({ left: o.left + (x - nb.left) });
+  o.setCoords();
+  flashFixture(found.fixture, '#3ecfb2');
+  return true;
+}
+
+let fixtureFlash = null;
+function flashFixture(f, colour) {
+  fixtureFlash = { rect: boundsOf(f), colour: colour, until: Date.now() + 450 };
+  canvas.requestRenderAll();
+  setTimeout(() => { fixtureFlash = null; canvas.requestRenderAll(); }, 460);
+}
+canvas.on('after:render', () => {
+  if (!fixtureFlash || Date.now() > fixtureFlash.until) return;
+  const ctx = canvas.getContext(), vpt = canvas.viewportTransform, z = canvas.getZoom();
+  ctx.save();
+  ctx.setTransform(vpt[0], vpt[1], vpt[2], vpt[3], vpt[4], vpt[5]);
+  ctx.strokeStyle = fixtureFlash.colour;
+  ctx.lineWidth = 2 / z;
+  const r = fixtureFlash.rect;
+  ctx.strokeRect(r.left, r.top, r.width, r.height);
+  ctx.restore();
+});
+
+/* live capacity bar over the shelf under the dragged product */
+let capacityHUD = null;
+function updateCapacityHUD(target) {
+  capacityHUD = null;
+  if (!isProduct(target)) return;
+  const found = surfaceUnder(target, GRAVITY_CM);
+  if (!found) return;
+  const fb = found.rect, pad = px(MIN_GAP_CM);
+  const used = occupiedIntervals(found.fixture, target).reduce((sum, t) => sum + (t.b - t.a - pad), 0)
+             + boundsOf(target).width;
+  capacityHUD = { rect: fb, used: used, total: fb.width, free: fb.width - used };
+}
+canvas.on('after:render', () => {
+  if (!capacityHUD) return;
+  const ctx = canvas.getContext(), vpt = canvas.viewportTransform, z = canvas.getZoom();
+  const r = capacityHUD.rect, ratio = Math.min(1.35, capacityHUD.used / Math.max(1, capacityHUD.total));
+  const colour = ratio > 1 ? '#ef6f6c' : ratio > 0.9 ? '#e8b44a' : '#3ecfb2';
+  ctx.save();
+  ctx.setTransform(vpt[0], vpt[1], vpt[2], vpt[3], vpt[4], vpt[5]);
+  const barY = r.top - 8 / z;
+  ctx.fillStyle = 'rgba(120,140,165,.35)';
+  ctx.fillRect(r.left, barY, r.width, 4 / z);
+  ctx.fillStyle = colour;
+  ctx.fillRect(r.left, barY, r.width * Math.min(1, ratio), 4 / z);
+  ctx.font = (11 / z) + 'px "JetBrains Mono", monospace';
+  ctx.fillText(Math.round(ratio * 100) + '% · ' + round1(cm(Math.max(0, capacityHUD.free))) + ' cm free',
+               r.left, barY - 4 / z);
+  ctx.restore();
+});
+
+/* ---- wire the drag lifecycle --------------------------------------- */
+canvas.on('mouse:down', opt => {
+  const t = canvas.getActiveObject();
+  if (t) {
+    const items = t.type === 'activeSelection' ? t._objects : [t];
+    items.forEach(o => { o._preDrag = { left: o.left, top: o.top }; });
+    dragCandidates = collectCandidates(items);
+  }
+  freePlacement = !!(opt.e && opt.e.altKey);
+});
+canvas.on('object:moving', opt => {
+  freePlacement = !!(opt.e && opt.e.altKey);
+  if (!freePlacement) { applyGuides(opt.target); updateCapacityHUD(opt.target); }
+});
+canvas.on('mouse:up', opt => {
+  freePlacement = !!(opt && opt.e && opt.e.altKey);
+  const t = canvas.getActiveObject();
+  if (t && t._preDrag && (t.left !== t._preDrag.left || t.top !== t._preDrag.top)) resolveDrop(t);
+  guideV = []; guideH = []; gapBadges = []; capacityHUD = null; dragCandidates = null;
+  SpatialGrid.invalidate();
+  canvas.requestRenderAll();
+});
+
+/* ==================================================================== */
+/* 9d. LOCKING — per object and the structure lock                      */
+/* ==================================================================== */
+let structureLocked = false;
+
+function setLocked(o, locked) {
+  o.data = o.data || {};
+  o.data.locked = !!locked;
+  o.set({
+    selectable: !locked, evented: !locked,
+    lockMovementX: !!locked, lockMovementY: !!locked,
+    lockRotation: !!locked, lockScalingX: !!locked, lockScalingY: !!locked,
+    hasControls: !locked, hoverCursor: locked ? 'default' : 'move'
+  });
+  // a locked fixture is still a valid snap target — locked means protected, not inert
+}
+
+function applyStructureLock() {
+  canvas.getObjects().forEach(o => { if (isFixture(o)) setLocked(o, structureLocked); });
+  $('btnLockStruct').style.color = structureLocked ? '#e8b44a' : '';
+  $('btnLockStruct').innerHTML = '<i class="fa-solid fa-' + (structureLocked ? 'lock' : 'lock-open') + '"></i>';
+  canvas.discardActiveObject();
+  canvas.requestRenderAll();
+  renderLayers();
+}
+$('btnLockStruct').onclick = () => {
+  structureLocked = !structureLocked;
+  applyStructureLock();
+  toast(structureLocked ? 'Fixtures and backgrounds locked.' : 'Fixtures unlocked.');
+};
+
+/* ==================================================================== */
+/* 9e. LAYERS PANEL                                                     */
+/* ==================================================================== */
+let layersOpen = true;
+$('layersToggle').onclick = () => {
+  layersOpen = !layersOpen;
+  $('layersBody').style.display = layersOpen ? '' : 'none';
+  $('layersChevron').className = 'fa-solid fa-chevron-' + (layersOpen ? 'down' : 'right') + ' text-[9px] text-muted';
+};
+
+const LAYER_ICON = { product: 'fa-shirt', image: 'fa-image', fixture: 'fa-grip-lines', background: 'fa-square-full',
+                     zone: 'fa-location-dot', text: 'fa-t', tag: 'fa-tag', shape: 'fa-shapes' };
+
+function renderLayers() {
+  const wrap = $('layersBody');
+  const objs = canvas.getObjects();
+  $('layerCount').textContent = objs.length;
+  const active = new Set(canvas.getActiveObjects());
+  wrap.innerHTML = '';
+
+  // top of the stack first, the way designers read a layer list
+  for (let i = objs.length - 1; i >= 0; i--) {
+    const o = objs[i];
+    const kind = (o.data && o.data.kind) || o.type;
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-1 px-1.5 py-1 rounded-md text-[11px] ' +
+      (active.has(o) ? 'bg-raise text-brass' : 'hover:bg-shell text-chalk');
+    row.innerHTML =
+      '<i class="fa-solid ' + (LAYER_ICON[kind] || 'fa-square') + ' text-[10px] w-3 text-muted"></i>' +
+      '<span class="flex-1 truncate">' + esc(nodeName(o)) + '</span>' +
+      '<button data-up   class="tool-btn !w-5 !h-5" title="Bring forward"><i class="fa-solid fa-chevron-up text-[8px]"></i></button>' +
+      '<button data-down class="tool-btn !w-5 !h-5" title="Send backward"><i class="fa-solid fa-chevron-down text-[8px]"></i></button>' +
+      '<button data-eye  class="tool-btn !w-5 !h-5" title="Show / hide"><i class="fa-solid fa-' + (o.visible ? 'eye' : 'eye-slash') + ' text-[8px]"></i></button>' +
+      '<button data-lock class="tool-btn !w-5 !h-5" title="Lock / unlock"><i class="fa-solid fa-' + (o.data && o.data.locked ? 'lock' : 'lock-open') + ' text-[8px]"></i></button>';
+
+    row.onclick = ev => {
+      if (ev.target.closest('button')) return;
+      if (o.data && o.data.locked) { toast('That layer is locked.'); return; }
+      canvas.discardActiveObject();
+      canvas.setActiveObject(o);
+      canvas.requestRenderAll();
+    };
+    row.querySelector('[data-up]').onclick   = () => { canvas.bringForward(o); pushHistory(true); renderLayers(); };
+    row.querySelector('[data-down]').onclick = () => { canvas.sendBackwards(o); pushHistory(true); renderLayers(); };
+    row.querySelector('[data-eye]').onclick  = () => { o.visible = !o.visible; canvas.requestRenderAll(); pushHistory(true); renderLayers(); };
+    row.querySelector('[data-lock]').onclick = () => {
+      setLocked(o, !(o.data && o.data.locked));
+      if (o.data.locked) canvas.discardActiveObject();
+      canvas.requestRenderAll(); pushHistory(true); renderLayers();
+    };
+    wrap.appendChild(row);
+  }
+}
+let layersTimer = null;
+function scheduleLayers() { clearTimeout(layersTimer); layersTimer = setTimeout(renderLayers, 80); }
+['object:added', 'object:removed', 'object:modified', 'selection:created', 'selection:updated', 'selection:cleared']
+  .forEach(ev => canvas.on(ev, scheduleLayers));
+
+/* ==================================================================== */
+/* 9f. SCALE PRESETS                                                    */
+/* ==================================================================== */
+const SCALE_PRESETS = {                       // [widthCm, heightCm] as drawn on a wall
+  foldedTop:  { S: [22, 4],  M: [26, 5],  L: [30, 6] },
+  denimStack: { S: [28, 10], M: [30, 14], L: [32, 18] },
+  shoeBox:    { S: [20, 11], M: [22, 12], L: [24, 13] },
+  shoePair:   { S: [24, 10], M: [27, 11], L: [30, 12] },
+  hangingTop: { S: [38, 60], M: [42, 66], L: [46, 72] },
+  bag:        { S: [24, 20], M: [30, 26], L: [36, 32] }
+};
+
+function applyPreset(size) {
+  const kind = $('presetKind').value;
+  const dims = (SCALE_PRESETS[kind] || {})[size];
+  if (!dims) return;
+  const targets = canvas.getActiveObjects().filter(isProduct);
+  if (!targets.length) { toast('Select a product first.'); return; }
+  targets.forEach(o => {
+    const bw = o.width || 1, bh = o.height || 1;
+    o.set({ scaleX: px(dims[0]) / bw, scaleY: px(dims[1]) / bh });
+    o.data.physical = { widthCm: dims[0], heightCm: dims[1], preset: kind + '/' + size };
+    o.setCoords();
+  });
+  canvas.requestRenderAll();
+  pushHistory(true);
+  refreshInspector();
+  toast(targets.length + ' item' + (targets.length > 1 ? 's' : '') + ' set to ' + kind + ' ' + size +
+        ' (' + dims[0] + ' × ' + dims[1] + ' cm).');
+}
+['S', 'M', 'L'].forEach(size => {
+  const b = document.createElement('button');
+  b.className = 'mini-btn';
+  b.textContent = size;
+  b.title = 'Apply the ' + size + ' preset to the selection';
+  b.onclick = () => applyPreset(size);
+  $('presetChips').appendChild(b);
+});
+(() => {
+  const b = document.createElement('button');
+  b.className = 'mini-btn';
+  b.innerHTML = '<i class="fa-solid fa-arrows-up-down-left-right text-[10px]"></i>';
+  b.title = 'Fit the product to the depth of the shelf it sits on';
+  b.onclick = () => {
+    const o = canvas.getActiveObject();
+    if (!isProduct(o)) { toast('Select a product first.'); return; }
+    const found = surfaceUnder(o, 60);
+    if (!found) { toast('Put it on a shelf first.'); return; }
+    const target = found.rect.width / 6;                 // a sensible sixth of the bay
+    o.scaleToWidth(target); o.setCoords();
+    canvas.requestRenderAll(); pushHistory(true); refreshInspector();
+  };
+  $('presetChips').appendChild(b);
+})();
+
+/* ==================================================================== */
+/* 9g. MIRROR & SYMMETRY                                                */
+/* ==================================================================== */
+/** Reflect nodes across a vertical axis at pivotX (canvas px). */
+function mirrorNodes(objs, pivotX, asCopy, done) {
+  const work = [];
+  let pending = objs.length;
+  if (!pending) { done && done([]); return; }
+
+  objs.forEach(o => {
+    const place = src => {
+      const b = boundsOf(src);
+      const newLeft = 2 * pivotX - (b.left + b.width);
+      src.set({ left: src.left + (newLeft - b.left) });
+      // text and tags must never be flipped — mirrored type is always a bug
+      const isType = /text|textbox|i-text/.test(src.type) || (src.data && src.data.kind === 'tag');
+      if (!isType) src.set({ flipX: !src.flipX });
+      src.setCoords();
+      work.push(src);
+      if (--pending === 0) { canvas.requestRenderAll(); pushHistory(true); done && done(work); }
+    };
+    if (asCopy) o.clone(cl => { canvas.add(cl); place(cl); }, EXTRA_PROPS);
+    else place(o);
+  });
+}
+
+function mirrorSelection(asCopy) {
+  const a = canvas.getActiveObject();
+  if (!a) { toast('Select something to mirror.'); return; }
+  const objs = a.type === 'activeSelection' ? a._objects.slice() : [a];
+  const b = a.getBoundingRect(true);
+  // in place: reflect around the selection's own centre
+  // as a copy:  reflect across the centre of the wall, the twin-bay / window case
+  const pivot = asCopy ? board.w / 2 : b.left + b.width / 2;
+  canvas.discardActiveObject();
+  mirrorNodes(objs, pivot, asCopy, made => {
+    if (made.length > 1) canvas.setActiveObject(new fabric.ActiveSelection(made, { canvas: canvas }));
+    else if (made.length) canvas.setActiveObject(made[0]);
+    canvas.requestRenderAll();
+    toast(asCopy ? 'Mirrored a copy to the opposite side.' : 'Mirrored in place.');
+  });
+}
+$('btnMirrorPlace').onclick = () => mirrorSelection(false);
+$('btnMirrorCopy').onclick  = () => mirrorSelection(true);
+$('btnMirror').onclick      = () => mirrorSelection(false);
+
+/* ==================================================================== */
+/* 9h. PATTERN & BULK REPLICATION (quick face-outs)                     */
+/* ==================================================================== */
+let lastReplication = null;
+
+/**
+ * Repeat the selection horizontally. A single product repeats itself; a
+ * multi-selection repeats the whole pattern (shirt-shirt-denim and so on).
+ * Capacity is enforced while building, so this and the rule engine agree.
+ */
+function replicateSelection(count, gapCm, silent) {
+  const a = canvas.getActiveObject();
+  if (!a) { toast('Select what you want to repeat.'); return; }
+  const seed = (a.type === 'activeSelection' ? a._objects.slice() : [a]).filter(o => !(o.data && o.data.locked));
+  if (!seed.length) return;
+
+  const sb = a.getBoundingRect(true);
+  const gap = px(gapCm == null ? MIN_GAP_CM : gapCm);
+  const pitch = sb.width + gap;
+
+  // if the seed sits on a shelf, never lay down more than the shelf can hold
+  let limit = count;
+  const host = seed.length === 1 ? surfaceUnder(seed[0], 20) : null;
+  if (host) {
+    const roomRight = (host.rect.left + host.rect.width) - sb.left;
+    limit = Math.max(1, Math.min(count, Math.floor((roomRight + gap) / pitch)));
+    if (limit < count && !silent) toast('Shelf holds ' + limit + ' — trimmed from ' + count + '.');
+  }
+  if (limit < 2) { if (!silent) toast('No room for another facing on this shelf.'); return; }
+
+  canvas.discardActiveObject();
+  const made = [];
+  let pending = (limit - 1) * seed.length;
+  const finish = () => {
+    canvas.renderOnAddRemove = true;
+    made.forEach(o => canvas.add(o));
+    const all = seed.concat(made);
+    canvas.setActiveObject(new fabric.ActiveSelection(all, { canvas: canvas }));
+    canvas.requestRenderAll();
+    pushHistory(true);
+    lastReplication = { count: limit, gapCm: gapCm == null ? MIN_GAP_CM : gapCm };
+    if (!silent) toast(limit + ' facings placed across ' + round1(cm(pitch * (limit - 1) + sb.width)) + ' cm.');
+  };
+  canvas.renderOnAddRemove = false;          // one render for the whole batch
+  for (let i = 1; i < limit; i++) {
+    seed.forEach(o => {
+      o.clone(cl => {
+        cl.set({ left: o.left + pitch * i, top: o.top, evented: true, selectable: true });
+        cl.data = Object.assign({}, o.data);
+        cl.setCoords();
+        made.push(cl);
+        if (--pending === 0) finish();
+      }, EXTRA_PROPS);
+    });
+  }
+}
+$('btnRepeat').onclick = () => replicateSelection(Math.max(2, parseInt($('inpRepeatCount').value, 10) || 4));
+
+/* ==================================================================== */
+/* 9i. BULK SWAP                                                        */
+/* ==================================================================== */
+function openSwap() {
+  const targets = canvas.getActiveObjects().filter(isProduct);
+  if (!targets.length) { toast('Select the products you want to replace.'); return; }
+  const cat = assortedCatalog();
+  $('swapCount').textContent = targets.length + ' item' + (targets.length > 1 ? 's' : '') + ' selected — pick the replacement.';
+  const grid = $('swapGrid');
+  grid.innerHTML = cat.length ? '' :
+    '<p class="col-span-4 text-[11.5px] text-muted text-center py-8">Upload photos to the Collection library first.</p>';
+  cat.forEach(item => {
+    const card = document.createElement('button');
+    card.className = 'rounded-xl border border-hairline bg-shell overflow-hidden hover:border-brass';
+    card.innerHTML =
+      '<div class="h-16 flex items-center justify-center bg-graphite p-1"><img src="' + item.thumb + '" class="max-h-full max-w-full object-contain" alt="" /></div>' +
+      '<div class="px-1.5 py-1 text-[9.5px] truncate text-chalk">' + esc(item.name || 'Untitled') + '</div>';
+    card.onclick = () => swapSelection(item.id, $('swapKeepSize').checked);
+    grid.appendChild(card);
+  });
+  $('modalSwap').classList.add('open');
+}
+$('btnSwap').onclick = openSwap;
+
+/**
+ * Replace every selected product with another style, keeping position,
+ * z-order and facings. Default is the new product's true dimensions —
+ * "keep footprint" is available but produces a pretty, physically wrong wall.
+ */
+function swapSelection(catalogId, keepSize) {
+  const item = readCatalog().find(i => i.id === catalogId);
+  if (!item) return;
+  const targets = canvas.getActiveObjects().filter(isProduct);
+  if (!targets.length) return;
+
+  let pending = targets.length;
+  const made = [];
+  canvas.renderOnAddRemove = false;
+  targets.forEach(old => {
+    fabric.Image.fromURL(item.src, img => {
+      const ob = boundsOf(old);
+      img.set({ originX: 'center', originY: 'center', angle: old.angle || 0, name: item.name || 'Product' });
+      if (keepSize) img.scaleToWidth(ob.width);
+      else img.scaleToWidth(px(item.wCm || 35));
+      // keep the centre-x and the bottom edge: products stay seated on their shelf
+      const nb = img.getBoundingRect(true);
+      img.set({
+        left: (ob.left + ob.width / 2) + (img.left - (nb.left + nb.width / 2)),
+        top:  (ob.top + ob.height)     - img.getScaledHeight() / 2
+      });
+      img.data = Object.assign({}, old.data, {
+        catalogId: item.id, cat: 'Collection', name: item.name, sku: item.sku,
+        brand: item.brand, colorway: item.colorway, price: item.price, sizes: item.sizes
+      });
+      const index = canvas.getObjects().indexOf(old);
+      canvas.remove(old);
+      canvas.insertAt(img, index, false);
+      img.setCoords();
+      made.push(img);
+      if (--pending === 0) {
+        canvas.renderOnAddRemove = true;
+        canvas.discardActiveObject();
+        canvas.setActiveObject(made.length > 1 ? new fabric.ActiveSelection(made, { canvas: canvas }) : made[0]);
+        canvas.requestRenderAll();
+        pushHistory(true);
+        closeModals();
+        validateScene();
+        toast('Swapped ' + made.length + ' item' + (made.length > 1 ? 's' : '') + ' for ' + (item.name || 'the new style') + '.');
+      }
+    });
+  });
+}
+
+/* ==================================================================== */
+/* 9j. RULE ENGINE + ISSUES BAR                                         */
+/*     Pure over a snapshot of the scene, so it can move to a Worker.   */
+/* ==================================================================== */
+function sceneSnapshot() {
+  return canvas.getObjects().filter(o => o.visible).map(o => {
+    const b = boundsOf(o);
+    return { ref: o, kind: (o.data && o.data.kind) || o.type, snap: o.data && o.data.snap,
+             name: nodeName(o), physical: o.data && o.data.physical,
+             left: b.left, top: b.top, width: b.width, height: b.height,
+             right: b.left + b.width, bottom: b.top + b.height };
+  });
+}
+
+function validate(nodes) {
+  const issues = [];
+  const surfaces = nodes.filter(n => n.snap === 'shelf' || n.snap === 'rail');
+  const products = nodes.filter(n => n.kind === 'product' || n.kind === 'image');
+  const pad = px(MIN_GAP_CM);
+
+  // 1 · linear capacity per surface
+  surfaces.forEach(s => {
+    const y = s.snap === 'rail' ? s.bottom : s.top;
+    const on = products.filter(p => Math.abs(p.bottom - y) < px(6) && p.right > s.left && p.left < s.right);
+    if (!on.length) return;
+    const used = on.reduce((sum, p) => sum + p.width + pad, -pad);
+    if (used > s.width + 1) {
+      issues.push({ level: 'error', ref: s.ref,
+        text: s.name + ' is ' + round1(cm(used - s.width)) + ' cm over capacity (' + on.length + ' facings).',
+        fix: 'Remove a facing or reduce the product width.' });
+    }
+    // 2 · overlap between neighbours on the same surface
+    on.sort((a, b2) => a.left - b2.left).forEach((p, i) => {
+      const next = on[i + 1];
+      if (next && next.left < p.right - 1) {
+        issues.push({ level: 'warn', ref: next.ref,
+          text: next.name + ' overlaps ' + p.name + ' by ' + round1(cm(p.right - next.left)) + ' cm.',
+          fix: 'Drag it clear, or let gravity re-seat it.' });
+      }
+    });
+  });
+
+  // 3 · reach zone: core product wants to sit between 60 and 180 cm
+  surfaces.forEach(s => {
+    const heightCm = cm(board.h - s.top);
+    if (heightCm > REACH_MAX_CM || heightCm < REACH_MIN_CM) {
+      const on = products.filter(p => Math.abs(p.bottom - (s.snap === 'rail' ? s.bottom : s.top)) < px(6));
+      if (on.length) issues.push({ level: 'warn', ref: s.ref,
+        text: s.name + ' sits at ' + Math.round(heightCm) + ' cm — outside the ' + REACH_MIN_CM + '–' + REACH_MAX_CM + ' cm reach zone.',
+        fix: 'Move core product lower, or keep this shelf for stock and display.' });
+    }
+  });
+
+  // 4 · anything off the wall
+  nodes.forEach(n => {
+    if (n.kind === 'background') return;
+    if (n.right < 0 || n.left > board.w || n.bottom < 0 || n.top > board.h) {
+      issues.push({ level: 'warn', ref: n.ref, text: n.name + ' is outside the wall.', fix: 'Drag it back or delete it.' });
+    }
+  });
+
+  // 5 · products without real dimensions can be drawn but never validated
+  const undated = products.filter(p => !p.physical);
+  if (undated.length) {
+    issues.push({ level: 'info', ref: undated[0].ref,
+      text: undated.length + ' product' + (undated.length > 1 ? 's have' : ' has') + ' no real dimensions.',
+      fix: 'Apply a scale preset or set the width and height in centimetres.' });
+  }
+  return issues;
+}
+
+let currentIssues = [], issuesOpen = false, validateTimer = null;
+function validateScene() {
+  currentIssues = validate(sceneSnapshot());
+  renderIssues();
+}
+function scheduleValidate() { clearTimeout(validateTimer); validateTimer = setTimeout(validateScene, 150); }
+['object:modified', 'object:added', 'object:removed'].forEach(ev => canvas.on(ev, scheduleValidate));
+
+function renderIssues() {
+  const bar = $('issuesBar'), list = $('issuesList');
+  const errors = currentIssues.filter(i => i.level === 'error').length;
+  const warns  = currentIssues.filter(i => i.level === 'warn').length;
+  const infos  = currentIssues.filter(i => i.level === 'info').length;
+
+  bar.classList.remove('hidden');
+  const colour = errors ? '#ef6f6c' : warns ? '#e8b44a' : infos ? '#8592a3' : '#3ecfb2';
+  $('issuesIcon').className = 'fa-solid text-[10px] fa-' + (errors ? 'circle-exclamation' : warns ? 'triangle-exclamation' : 'circle-check');
+  $('issuesIcon').style.color = colour;
+  $('issuesSummary').textContent = currentIssues.length
+    ? errors + ' error' + (errors === 1 ? '' : 's') + ' · ' + warns + ' warning' + (warns === 1 ? '' : 's') + (infos ? ' · ' + infos + ' note' + (infos === 1 ? '' : 's') : '')
+    : 'No issues — this wall is buildable.';
+  $('issuesSummary').style.color = colour;
+
+  list.classList.toggle('hidden', !issuesOpen);
+  if (!issuesOpen) return;
+  list.innerHTML = currentIssues.length ? '' : '<p class="text-[11px] text-muted px-2 py-2">Nothing to fix.</p>';
+  currentIssues.forEach(iss => {
+    const tone = { error: '#ef6f6c', warn: '#e8b44a', info: '#8592a3' }[iss.level];
+    const row = document.createElement('button');
+    row.className = 'w-full text-left px-2 py-1.5 rounded-md hover:bg-raise flex gap-2 items-start';
+    row.innerHTML =
+      '<span class="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style="background:' + tone + '"></span>' +
+      '<span class="flex-1"><span class="text-chalk">' + esc(iss.text) + '</span>' +
+      '<span class="text-muted"> ' + esc(iss.fix || '') + '</span></span>';
+    row.onclick = () => {
+      if (!iss.ref) return;
+      canvas.discardActiveObject();
+      if (iss.ref.selectable) canvas.setActiveObject(iss.ref);
+      const b = boundsOf(iss.ref), z = canvas.getZoom();
+      canvas.setViewportTransform([z, 0, 0, z,
+        canvas.getWidth() / 2 - (b.left + b.width / 2) * z,
+        canvas.getHeight() / 2 - (b.top + b.height / 2) * z]);
+      canvas.requestRenderAll();
+    };
+    list.appendChild(row);
+  });
+}
+$('issuesToggle').onclick = () => {
+  issuesOpen = !issuesOpen;
+  $('issuesChevron').className = 'fa-solid fa-chevron-' + (issuesOpen ? 'down' : 'up') + ' text-[9px] text-muted';
+  renderIssues();
+};
+
+/* ==================================================================== */
+/* 9k. AUTO-LAYOUT — rule-based shelf filling                           */
+/* ==================================================================== */
+const hslCache = new Map();
+
+/** Dominant hue of a catalogue thumbnail, cached. Used for colour blocking. */
+function dominantHsl(item, cb) {
+  if (hslCache.has(item.id)) { cb(hslCache.get(item.id)); return; }
+  const im = new Image();
+  im.onerror = () => { hslCache.set(item.id, { h: 0, s: 0, l: 0.5 }); cb(hslCache.get(item.id)); };
+  im.onload = () => {
+    const size = 32;
+    const cv = document.createElement('canvas');
+    cv.width = size; cv.height = size;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(im, 0, 0, size, size);
+    let r = 0, g = 0, b = 0, n = 0;
+    try {
+      const d = ctx.getImageData(0, 0, size, size).data;
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3];
+        if (a < 40) continue;                                   // ignore cut-out background
+        const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
+        if (mn > 235 && mx - mn < 14) continue;                  // ignore paper white
+        r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+      }
+    } catch (e) { /* tainted canvas */ }
+    const hsl = n ? rgbToHsl(r / n, g / n, b / n) : { h: 0, s: 0, l: 0.5 };
+    hslCache.set(item.id, hsl);
+    cb(hsl);
+  };
+  im.src = item.thumb || item.src;
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  let h = 0, s = 0;
+  if (mx !== mn) {
+    const d = mx - mn;
+    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0));
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  return { h: h, s: s, l: l };
+}
+
+const SIZE_ORDER = ['xxs', 'xs', 's', 'm', 'l', 'xl', 'xxl', '3xl'];
+function sizeIndex(item) {
+  const first = String(item.sizes || '').split(/[,/·\s]+/).filter(Boolean)[0];
+  if (!first) return 999;
+  const n = parseFloat(first);
+  if (!isNaN(n)) return n;                                       // shoe sizes: 36, 37…
+  const i = SIZE_ORDER.indexOf(first.toLowerCase());
+  return i === -1 ? 998 : i;
+}
+
+const SORTERS = {
+  colour: (items, hsls) => items.slice().sort((a, b) => {
+    const A = hsls.get(a.id), B = hsls.get(b.id);
+    if (A.s < 0.12 && B.s < 0.12) return A.l - B.l;              // neutrals: light → dark
+    if (A.s < 0.12) return -1;
+    if (B.s < 0.12) return 1;
+    return A.h - B.h || A.l - B.l;                               // spectrum, then value
+  }),
+  size:  items => items.slice().sort((a, b) => sizeIndex(a) - sizeIndex(b)),
+  price: items => items.slice().sort((a, b) => (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0)),
+  name:  items => items.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))
+};
+
+function targetShelf() {
+  const a = canvas.getActiveObject();
+  if (a && isSurface(a)) return a;
+  if (a && a.type !== 'activeSelection') { const f = surfaceUnder(a, 60); if (f) return f.fixture; }
+  const shelves = canvas.getObjects().filter(isSurface);
+  return shelves.length === 1 ? shelves[0] : null;
+}
+
+$('btnAutoFill').onclick = () => {
+  const shelf = targetShelf();
+  $('fillTarget').textContent = shelf
+    ? 'Filling ' + nodeName(shelf) + ' — ' + round1(cm(boundsOf(shelf).width)) + ' cm of linear space.'
+    : 'Select a shelf or rail on the canvas first.';
+  $('modalAutoFill').classList.add('open');
+};
+
+$('fillApply').onclick = () => {
+  const shelf = targetShelf();
+  if (!shelf) { toast('Select a shelf first.'); return; }
+
+  const rule = $('fillRule').value;
+  const facings = Math.max(1, parseInt($('fillFacings').value, 10) || 1);
+  const gap = px(Math.max(0, parseFloat($('fillGap').value) || 0));
+  const even = $('fillEven').checked;
+  const brand = ($('fillBrand').value || '').trim().toLowerCase();
+
+  if ($('fillSource').value === 'silhouettes') {
+    fillWithSilhouettes(shelf, facings, gap, even);
+    return;
+  }
+  let items = assortedCatalog();
+  if (brand) items = items.filter(i => String(i.brand || '').toLowerCase().includes(brand));
+  if (!items.length) { toast('No products match — upload photos or clear the brand filter.'); return; }
+
+  // resolve the colours we need, then sort, then pack
+  let pending = items.length;
+  const hsls = new Map();
+  const proceed = () => {
+    const sorted = SORTERS[rule](items, hsls);
+    packOntoShelf(shelf, sorted, facings, gap, even);
+  };
+  if (rule !== 'colour') { proceed(); return; }
+  items.forEach(it => dominantHsl(it, hsl => { hsls.set(it.id, hsl); if (--pending === 0) proceed(); }));
+};
+
+/** Place as many items as physically fit, in the given order. */
+function packOntoShelf(shelf, sorted, facings, gap, even) {
+  const sb = boundsOf(shelf), y = surfaceYof(shelf);
+  const queue = [];
+  let used = 0;
+  for (const item of sorted) {
+    const w = px(item.wCm || 35);
+    for (let f = 0; f < facings; f++) {
+      if (used + w + (queue.length ? gap : 0) > sb.width) break;
+      used += w + (queue.length ? gap : 0);
+      queue.push({ item: item, w: w });
+    }
+    if (used >= sb.width) break;
+  }
+  if (!queue.length) { toast('Nothing fits on that shelf at the current sizes.'); return; }
+
+  // clear what is already sitting there, then lay the run down in one step
+  canvas.getObjects().filter(o => isProduct(o) && Math.abs(boundsOf(o).bottom - y) < px(6) &&
+      boundsOf(o).left < sb.left + sb.width && boundsOf(o).right > sb.left)
+    .forEach(o => canvas.remove(o));
+
+  const spare = sb.width - queue.reduce((s, q) => s + q.w, 0);
+  const step = even && queue.length > 1 ? spare / (queue.length - 1) : gap;
+  const startX = even ? sb.left : sb.left + Math.max(0, (sb.width - used) / 2);
+
+  canvas.renderOnAddRemove = false;
+  let x = startX, pending = queue.length;
+  const made = [];
+  queue.forEach(q => {
+    fabric.Image.fromURL(q.item.src, img => {
+      img.set({ originX: 'center', originY: 'center', name: q.item.name || 'Product' });
+      img.scaleToWidth(q.w);
+      img.set({ left: 0, top: 0 });
+      img.setCoords();
+      const nb = img.getBoundingRect(true);
+      img.set({ left: q.x + q.w / 2 - (nb.left + nb.width / 2) + img.left,
+                top:  y - img.getScaledHeight() / 2 });
+      img.data = { kind: 'product', cat: 'Collection', catalogId: q.item.id, name: q.item.name,
+                   sku: q.item.sku, brand: q.item.brand, colorway: q.item.colorway, price: q.item.price,
+                   sizes: q.item.sizes, facings: 1, lookId: null,
+                   physical: { widthCm: q.item.wCm || 35, heightCm: round1(cm(img.getScaledHeight())) } };
+      img.setCoords();
+      made.push(img);
+      if (--pending === 0) {
+        canvas.renderOnAddRemove = true;
+        made.forEach(m => canvas.add(m));
+        canvas.discardActiveObject();
+        canvas.setActiveObject(new fabric.ActiveSelection(made, { canvas: canvas }));
+        canvas.requestRenderAll();
+        pushHistory(true);
+        closeModals();
+        validateScene();
+        toast(made.length + ' items placed — adjust anything, it is one undo step.');
+      }
+    });
+  });
+  // assign x positions up front so the async loads land in the right places
+  queue.forEach(q => { q.x = x; x += q.w + step; });
+}
+
+/** Same packer, using the built-in vector silhouettes instead of photos. */
+function fillWithSilhouettes(shelf, facings, gap, even) {
+  const sb = boundsOf(shelf), y = surfaceYof(shelf);
+  const items = LIBRARY.apparel.items.concat(LIBRARY.footwear.items).filter(i => i.kind === 'product');
+  const made = [];
+  let x = sb.left, i = 0;
+  canvas.renderOnAddRemove = false;
+  while (x < sb.left + sb.width && made.length < 40) {
+    const item = items[i % items.length];
+    for (let f = 0; f < facings; f++) {
+      const o = makeProduct(item);
+      const w = o.getScaledWidth();
+      if (x + w > sb.left + sb.width) { x = Infinity; break; }
+      o.set({ left: x + w / 2, top: y - o.getScaledHeight() / 2 });
+      o.data.physical = { widthCm: item.w, heightCm: round1(cm(o.getScaledHeight())) };
+      o.setCoords();
+      made.push(o);
+      x += w + gap;
+    }
+    i++;
+  }
+  canvas.renderOnAddRemove = true;
+  made.forEach(m => canvas.add(m));
+  if (made.length) {
+    canvas.discardActiveObject();
+    canvas.setActiveObject(new fabric.ActiveSelection(made, { canvas: canvas }));
+    pushHistory(true);
+  }
+  canvas.requestRenderAll();
+  closeModals();
+  validateScene();
+  toast(made.length + ' silhouettes placed.');
+}
+
+/* ==================================================================== */
+/* 9l. SHORTCUTS FOR THE NEW TOOLS                                      */
+/* ==================================================================== */
+document.addEventListener('keydown', e => {
+  const active = canvas.getActiveObject();
+  if (active && active.isEditing) return;
+  if (typingInField(e)) return;
+  const ctrl = e.ctrlKey || e.metaKey;
+
+  if (ctrl && e.code === 'KeyL') { e.preventDefault(); $('btnLockStruct').click(); return; }
+  if (ctrl) return;
+  if (e.code === 'KeyM') { e.preventDefault(); mirrorSelection(e.shiftKey); return; }
+  if (e.code === 'KeyF') { e.preventDefault(); $('btnAutoFill').click(); return; }
+  if (e.code === 'KeyS' && e.shiftKey) { e.preventDefault(); openSwap(); return; }
+  if (e.code === 'KeyD' && e.shiftKey) {
+    e.preventDefault();
+    replicateSelection(lastReplication ? lastReplication.count : 4, lastReplication ? lastReplication.gapCm : MIN_GAP_CM);
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* 10. ENTERPRISE MODULES                                              */
+/*     view router · inventory · assortment · dashboard · PDF · audit   */
+/* ------------------------------------------------------------------ */
+
+/* ==================================================================== */
+/* 10a0. TOP BAR OVERFLOW MENU                                          */
+/*       Positioned fixed and measured on open, so the header can scroll */
+/*       horizontally without ever clipping it.                          */
+/* ==================================================================== */
+function closeMoreMenu() {
+  $('moreMenu').classList.remove('open');
+  $('btnMore').classList.remove('active');
+}
+function toggleMoreMenu() {
+  const menu = $('moreMenu'), btn = $('btnMore');
+  if (menu.classList.contains('open')) { closeMoreMenu(); return; }
+  const r = btn.getBoundingClientRect();
+  menu.classList.add('open');
+  btn.classList.add('active');
+  const w = menu.offsetWidth || 208;
+  menu.style.top = (r.bottom + 6) + 'px';
+  menu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+}
+$('btnMore').onclick = e => { e.stopPropagation(); toggleMoreMenu(); };
+$('moreMenu').addEventListener('click', () => setTimeout(closeMoreMenu, 0));   // choose and close
+document.addEventListener('click', e => {
+  if (!$('moreMenu').contains(e.target) && e.target !== $('btnMore')) closeMoreMenu();
+});
+document.addEventListener('keydown', e => { if (e.code === 'Escape') closeMoreMenu(); });
+window.addEventListener('resize', closeMoreMenu);
+
+/* ==================================================================== */
+/* 10a. VIEW ROUTER                                                     */
+/*      The editor stays mounted — hiding it would cost the canvas its   */
+/*      dimensions, so we only toggle display and resize on return.      */
+/* ==================================================================== */
+let currentView = 'editor';
+const VIEW_INIT = {
+  dashboard:  () => renderDashboard(),
+  inventory:  () => renderInventory(),
+  assortment: () => renderAssortment(),
+  compliance: () => openAudit()
+};
+
+function showView(name) {
+  currentView = name;
+  document.querySelectorAll('.app-view').forEach(v => v.classList.add('hidden'));
+  const el = document.getElementById('view' + name.charAt(0).toUpperCase() + name.slice(1));
+  if (el) el.classList.remove('hidden');
+  document.querySelectorAll('#viewSwitch .mode-opt').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  document.querySelectorAll('.editor-only').forEach(n => { n.style.display = name === 'editor' ? '' : 'none'; });
+  closeMoreMenu();
+  if (name === 'editor') setTimeout(resizeCanvas, 0);
+  if (VIEW_INIT[name]) VIEW_INIT[name]();
+}
+document.getElementById('viewSwitch').addEventListener('click', e => {
+  const b = e.target.closest('[data-view]');
+  if (b) showView(b.dataset.view);
+});
+
+/** A white artboard render, used for thumbnails, PDFs and the audit view. */
+function snapshotImage(maxPx, format) {
+  const vpt = canvas.viewportTransform.slice();
+  const bgWas = canvas.backgroundColor;
+  const sheetWas = sheetMode;
+  const active = canvas.getActiveObject();
+  canvas.discardActiveObject();
+  exporting = true;
+  if (sheetMode === 'off') { sheetMode = 'dark'; applyPaperState(); }
+  canvas.backgroundColor = '#ffffff';
+  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+  canvas.renderAll();
+  const frame = exportBounds();
+  const mult = Math.max(0.05, Math.min(3, (maxPx || 1200) / Math.max(frame.width, frame.height)));
+  let url = '';
+  try {
+    url = canvas.toDataURL({ format: format || 'jpeg', quality: 0.9, multiplier: mult,
+      left: frame.left, top: frame.top, width: frame.width, height: frame.height });
+  } catch (err) { console.error('[MerchStudio] snapshot failed:', err); }
+  exporting = false;
+  canvas.backgroundColor = bgWas;
+  if (sheetWas !== sheetMode) { sheetMode = sheetWas; applyPaperState(); }
+  canvas.setViewportTransform(vpt);
+  if (active) canvas.setActiveObject(active);
+  canvas.requestRenderAll();
+  return { url: url, frame: frame };
+}
+
+/* ==================================================================== */
+/* 10b. INVENTORY & PRODUCT CATALOG MANAGER                             */
+/*      Extends the existing catalog records with the physical data the  */
+/*      rule engine needs: depth, category, supplier, status.            */
+/* ==================================================================== */
+const STATUSES = ['active', 'incoming', 'clearance', 'discontinued'];
+const DEFAULT_CATEGORIES = ['Tops', 'Bottoms', 'Outerwear', 'Dresses', 'Footwear', 'Bags', 'Accessories', 'Uncategorised'];
+
+/** Fill in fields older records predate, without rewriting storage on read. */
+function normaliseItem(it) {
+  return Object.assign({
+    category: 'Uncategorised', supplier: '', status: 'active',
+    hCm: 0, dCm: 0, weightKg: 0
+  }, it, { wCm: it.wCm || 35 });
+}
+const inventory = () => readCatalog().map(normaliseItem);
+
+function updateItem(id, patch) {
+  const cat = readCatalog();
+  const item = cat.find(i => i.id === id);
+  if (!item) return false;
+  Object.assign(item, patch);
+  const ok = writeCatalog(cat);
+  if (ok) {
+    // keep anything already placed on a wall in step with the master record
+    canvas.getObjects().forEach(o => {
+      if (o.data && o.data.catalogId === id) {
+        Object.assign(o.data, { name: item.name, sku: item.sku, brand: item.brand,
+          colorway: item.colorway, price: item.price, sizes: item.sizes,
+          physical: { widthCm: item.wCm, heightCm: item.hCm || undefined, depthCm: item.dCm || undefined } });
+        o.name = item.name;
+      }
+    });
+    canvas.requestRenderAll();
+  }
+  return ok;
+}
+
+function invStats() {
+  const items = inventory();
+  const withDims = items.filter(i => i.wCm && i.hCm && i.dCm).length;
+  const brands = new Set(items.map(i => i.brand).filter(Boolean)).size;
+  const active = items.filter(i => i.status === 'active').length;
+  return [
+    { label: 'Products', value: items.length, tone: '#dfe5ec' },
+    { label: 'Active', value: active, tone: '#3ecfb2' },
+    { label: 'Brands', value: brands, tone: '#e8b44a' },
+    { label: 'Full dimensions', value: items.length ? Math.round(withDims / items.length * 100) + '%' : '—',
+      tone: withDims === items.length ? '#3ecfb2' : '#ef6f6c' }
+  ];
+}
+
+function renderInventory() {
+  const items = inventory();
+  const q = ($('invSearch').value || '').toLowerCase();
+  const catFilter = $('invCategory').value;
+
+  // stats
+  $('invStats').innerHTML = invStats().map(s =>
+    '<div class="bg-panel border border-hairline rounded-xl px-4 py-3">' +
+      '<div class="text-[10px] uppercase tracking-[.12em] text-muted">' + s.label + '</div>' +
+      '<div class="font-display font-bold text-[20px] mt-1" style="color:' + s.tone + '">' + s.value + '</div>' +
+    '</div>').join('');
+
+  // category filter options, preserved across renders
+  const cats = [...new Set(DEFAULT_CATEGORIES.concat(items.map(i => i.category)))];
+  if ($('invCategory').options.length !== cats.length + 1) {
+    $('invCategory').innerHTML = '<option value="">All categories</option>' +
+      cats.map(c => '<option>' + esc(c) + '</option>').join('');
+    $('invCategory').value = catFilter || '';
+  }
+
+  const rows = items.filter(i => {
+    if (catFilter && i.category !== catFilter) return false;
+    if (!q) return true;
+    return [i.name, i.sku, i.brand, i.supplier, i.colorway].some(v => String(v || '').toLowerCase().includes(q));
+  });
+
+  const wrap = $('invRows');
+  wrap.innerHTML = rows.length ? '' :
+    '<p class="text-[12px] text-muted text-center py-10">No products yet. Upload photos to build the master catalog.</p>';
+
+  rows.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-[64px_1.6fr_1fr_1fr_1fr_130px_90px_92px] gap-2 px-3 py-2 items-center border-b border-hairline/60 hover:bg-shell';
+    const dimTone = (item.wCm && item.hCm && item.dCm) ? '' : 'style="border-color:#ef6f6c"';
+    row.innerHTML =
+      '<div class="h-12 w-12 rounded-lg bg-graphite flex items-center justify-center overflow-hidden">' +
+        '<img src="' + item.thumb + '" class="max-h-full max-w-full object-contain" alt="" /></div>' +
+      '<div class="min-w-0">' +
+        '<input class="input !font-sans !py-1 !text-[12px]" data-f="name" value="' + esc(item.name || '') + '" />' +
+        '<input class="input !py-1 !text-[10.5px] mt-1" data-f="sku" placeholder="SKU" value="' + esc(item.sku || '') + '" /></div>' +
+      '<input class="input !font-sans !py-1 !text-[12px]" data-f="brand" placeholder="Brand" value="' + esc(item.brand || '') + '" />' +
+      '<input class="input !font-sans !py-1 !text-[12px]" data-f="supplier" placeholder="Supplier" value="' + esc(item.supplier || '') + '" />' +
+      '<select class="input !py-1 !text-[12px]" data-f="category">' +
+        cats.map(c => '<option' + (c === item.category ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>' +
+      '<div class="flex gap-1">' +
+        '<input class="input !py-1 !text-[11px] !px-1 text-center" ' + dimTone + ' data-f="wCm" type="number" value="' + (item.wCm || '') + '" title="Width" />' +
+        '<input class="input !py-1 !text-[11px] !px-1 text-center" ' + dimTone + ' data-f="hCm" type="number" value="' + (item.hCm || '') + '" title="Height" />' +
+        '<input class="input !py-1 !text-[11px] !px-1 text-center" ' + dimTone + ' data-f="dCm" type="number" value="' + (item.dCm || '') + '" title="Depth" /></div>' +
+      '<select class="input !py-1 !text-[11px]" data-f="status">' +
+        STATUSES.map(st => '<option' + (st === item.status ? ' selected' : '') + '>' + st + '</option>').join('') + '</select>' +
+      '<div class="flex gap-1 justify-end">' +
+        '<button class="tool-btn !w-7 !h-7" data-place title="Place in the editor"><i class="fa-solid fa-arrow-right-to-bracket text-[11px]"></i></button>' +
+        '<button class="tool-btn !w-7 !h-7 !text-coral" data-del title="Remove"><i class="fa-solid fa-trash text-[11px]"></i></button></div>';
+
+    row.querySelectorAll('[data-f]').forEach(inp => {
+      inp.onchange = () => {
+        const f = inp.dataset.f;
+        const val = ['wCm', 'hCm', 'dCm'].includes(f) ? (parseFloat(inp.value) || 0) : inp.value;
+        updateItem(item.id, { [f]: val });
+        renderInventory(); renderCatalog();
+      };
+    });
+    row.querySelector('[data-place]').onclick = () => { showView('editor'); placeCatalogItem(item.id); };
+    row.querySelector('[data-del]').onclick = () => {
+      if (!confirm('Remove "' + (item.name || 'this product') + '" from the catalog? Items already on a wall stay.')) return;
+      writeCatalog(readCatalog().filter(i => i.id !== item.id));
+      renderInventory(); renderCatalog();
+    };
+    wrap.appendChild(row);
+  });
+}
+$('invSearch').oninput = () => renderInventory();
+$('invCategory').onchange = () => renderInventory();
+$('invUpload').onchange = e => {
+  addFilesToCatalog(e.target.files);
+  e.target.value = '';
+  setTimeout(renderInventory, 900);            // uploads finish asynchronously
+};
+
+/* ==================================================================== */
+/* 10c. ASSORTMENT — rule-based filtering                               */
+/* ==================================================================== */
+let assortment = { category: [], brand: [], supplier: [], status: [], priceMin: null, priceMax: null, dimsOnly: false };
+let activeAssortment = null;                    // Set of catalog ids, or null for "everything"
+
+function matchesAssortment(item, f) {
+  if (f.category.length && !f.category.includes(item.category)) return false;
+  if (f.brand.length && !f.brand.includes(item.brand || '—')) return false;
+  if (f.supplier.length && !f.supplier.includes(item.supplier || '—')) return false;
+  if (f.status.length && !f.status.includes(item.status)) return false;
+  const price = parseFloat(item.price);
+  if (f.priceMin != null && !isNaN(f.priceMin) && !(price >= f.priceMin)) return false;
+  if (f.priceMax != null && !isNaN(f.priceMax) && !(price <= f.priceMax)) return false;
+  if (f.dimsOnly && !(item.wCm && item.hCm && item.dCm)) return false;
+  return true;
+}
+
+/** Every module that offers products reads through this, so one filter rules them all. */
+function assortedCatalog() {
+  const all = inventory();
+  if (!activeAssortment) return all;
+  return all.filter(i => activeAssortment.has(i.id));
+}
+
+function facetBox(hostId, values, key) {
+  const host = $(hostId);
+  host.innerHTML = values.length ? '' : '<span class="text-[10.5px] text-muted">none yet</span>';
+  values.forEach(v => {
+    const id = hostId + '-' + v.replace(/\W/g, '');
+    const row = document.createElement('label');
+    row.className = 'flex items-center gap-2 text-[11.5px] text-chalk cursor-pointer';
+    row.innerHTML = '<input type="checkbox" class="accent-brass" ' +
+      (assortment[key].includes(v) ? 'checked' : '') + ' /> <span class="truncate">' + esc(v) + '</span>';
+    row.querySelector('input').onchange = ev => {
+      if (ev.target.checked) assortment[key].push(v);
+      else assortment[key] = assortment[key].filter(x => x !== v);
+      renderAssortment();
+    };
+    host.appendChild(row);
+  });
+}
+
+function renderAssortment() {
+  const all = inventory();
+  facetBox('fCategory', [...new Set(all.map(i => i.category))].sort(), 'category');
+  facetBox('fBrand',    [...new Set(all.map(i => i.brand || '—'))].sort(), 'brand');
+  facetBox('fSupplier', [...new Set(all.map(i => i.supplier || '—'))].sort(), 'supplier');
+  facetBox('fStatus',   STATUSES, 'status');
+
+  assortment.priceMin = $('fPriceMin').value === '' ? null : parseFloat($('fPriceMin').value);
+  assortment.priceMax = $('fPriceMax').value === '' ? null : parseFloat($('fPriceMax').value);
+  assortment.dimsOnly = $('fDims').checked;
+
+  const matched = all.filter(i => matchesAssortment(i, assortment));
+  $('assortCount').textContent = matched.length + ' of ' + all.length + ' products match';
+  $('assortActive').textContent = activeAssortment
+    ? 'Editor is limited to ' + activeAssortment.size + ' products'
+    : 'Editor currently shows the whole catalog';
+
+  const grid = $('assortGrid');
+  grid.innerHTML = matched.length ? '' :
+    '<p class="col-span-5 text-[12px] text-muted text-center py-10">Nothing matches these filters.</p>';
+  matched.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'rounded-xl border border-hairline bg-panel overflow-hidden';
+    card.innerHTML =
+      '<div class="h-24 bg-graphite flex items-center justify-center p-2"><img src="' + item.thumb + '" class="max-h-full max-w-full object-contain" alt="" /></div>' +
+      '<div class="px-2 py-1.5">' +
+        '<div class="text-[11px] truncate text-chalk">' + esc(item.name || 'Untitled') + '</div>' +
+        '<div class="text-[9.5px] text-muted truncate font-mono">' + esc(item.sku || 'no SKU') + ' · ' + esc(item.status) + '</div>' +
+      '</div>';
+    grid.appendChild(card);
+  });
+}
+['fPriceMin', 'fPriceMax'].forEach(id => { $(id).oninput = () => renderAssortment(); });
+$('fDims').onchange = () => renderAssortment();
+$('assortClear').onclick = () => {
+  assortment = { category: [], brand: [], supplier: [], status: [], priceMin: null, priceMax: null, dimsOnly: false };
+  $('fPriceMin').value = ''; $('fPriceMax').value = ''; $('fDims').checked = false;
+  activeAssortment = null;
+  renderAssortment(); renderCatalog();
+  toast('Assortment reset — the whole catalog is available again.');
+};
+$('assortApply').onclick = () => {
+  const matched = inventory().filter(i => matchesAssortment(i, assortment));
+  activeAssortment = new Set(matched.map(i => i.id));
+  renderAssortment(); renderCatalog();
+  showView('editor');
+  toast('Editor limited to ' + matched.length + ' products in this assortment.');
+};
+
+/* ==================================================================== */
+/* 10d. DASHBOARD — planograms list                                     */
+/* ==================================================================== */
+let dashLayout = 'grid';
+
+async function renderDashboard() {
+  const body = $('dashBody');
+  body.innerHTML = '<div class="col-span-4 text-center py-12 text-muted text-[12px]"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading…</div>';
+
+  let items = [];
+  try { items = await store.list(); } catch (e) { items = Local.list(); }
+  if (store === Cloud) {
+    const localOnly = Local.list().filter(l => !items.some(r => r.id === l.id));
+    items = items.concat(localOnly.map(l => Object.assign({}, l, { remote: false })));
+  }
+  // thumbnails live in the local mirror; cloud rows borrow them when present
+  items = items.map(p => Object.assign({}, p, { thumb: (Local.get(p.id) || {}).thumb || p.thumb }));
+
+  const q = ($('dashSearch').value || '').toLowerCase();
+  if (q) items = items.filter(p => (p.name + ' ' + (p.tier || '')).toLowerCase().includes(q));
+  const sort = $('dashSort').value;
+  items.sort((a, b) => sort === 'name' ? String(a.name).localeCompare(String(b.name))
+                    : sort === 'tier' ? String(a.tier).localeCompare(String(b.tier))
+                    : (b.updated || 0) - (a.updated || 0));
+
+  $('dashSub').textContent = items.length + ' planogram' + (items.length === 1 ? '' : 's') +
+    ' · ' + (store === Cloud ? 'workspace ' + workspaceId : 'this browser only');
+
+  body.className = dashLayout === 'grid' ? 'grid grid-cols-4 gap-4' : 'flex flex-col gap-2';
+  body.innerHTML = '';
+  if (!items.length) {
+    body.innerHTML = '<div class="col-span-4 text-center py-16 text-muted text-[12px]">No planograms yet. Build a wall in the editor and save it.</div>';
+    return;
+  }
+
+  items.forEach(p => {
+    const card = document.createElement('div');
+    const isGrid = dashLayout === 'grid';
+    card.className = isGrid
+      ? 'group rounded-2xl border border-hairline bg-panel overflow-hidden hover:border-brass transition'
+      : 'group flex items-center gap-3 rounded-xl border border-hairline bg-panel p-2 hover:border-brass transition';
+    const thumb = p.thumb
+      ? '<img src="' + p.thumb + '" class="w-full h-full object-contain" alt="" />'
+      : '<div class="w-full h-full flex items-center justify-center text-muted"><i class="fa-solid fa-image"></i></div>';
+    const badge = p.remote === false
+      ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-raise text-muted">local</span>'
+      : (store === Cloud ? '<span class="text-[9px] px-1.5 py-0.5 rounded" style="background:rgba(62,207,178,.15);color:#3ecfb2">synced</span>' : '');
+
+    card.innerHTML = isGrid
+      ? '<div class="h-36 bg-white/95 p-2">' + thumb + '</div>' +
+        '<div class="p-3"><div class="text-[13px] font-medium truncate">' + esc(p.name || 'Untitled') + ' ' + badge + '</div>' +
+        '<div class="text-[10.5px] text-muted mt-0.5">' + (p.updated ? new Date(p.updated).toLocaleDateString() : '—') +
+        ' · ' + esc(p.tier || 'standard') + ' · ' + esc(p.mode === 'floor' ? 'floor plan' : 'wall') + '</div>' +
+        '<div class="flex gap-1 mt-2"><button class="nav-btn flex-1 justify-center" data-open>Open</button>' +
+        '<button class="tool-btn" data-dup title="Duplicate"><i class="fa-solid fa-copy"></i></button>' +
+        '<button class="tool-btn !text-coral" data-del title="Delete"><i class="fa-solid fa-trash"></i></button></div></div>'
+      : '<div class="w-20 h-14 bg-white/95 rounded-lg p-1 shrink-0">' + thumb + '</div>' +
+        '<div class="flex-1 min-w-0"><div class="text-[13px] font-medium truncate">' + esc(p.name || 'Untitled') + ' ' + badge + '</div>' +
+        '<div class="text-[10.5px] text-muted">' + (p.updated ? new Date(p.updated).toLocaleString() : '—') + ' · ' + esc(p.tier || 'standard') + '</div></div>' +
+        '<button class="nav-btn" data-open>Open</button>' +
+        '<button class="tool-btn" data-dup title="Duplicate"><i class="fa-solid fa-copy"></i></button>' +
+        '<button class="tool-btn !text-coral" data-del title="Delete"><i class="fa-solid fa-trash"></i></button>';
+
+    card.querySelector('[data-open]').onclick = async () => { await openProject(p.id); showView('editor'); };
+    card.querySelector('[data-dup]').onclick = () => {
+      const src = Local.get(p.id);
+      if (!src) { toast('Open it once first so a local copy exists.'); return; }
+      const copy = Object.assign({}, src, { id: 'p' + Date.now(), name: src.name + ' (copy)', updated: Date.now(), versions: [] });
+      Local.put(copy);
+      renderDashboard();
+      toast('Duplicated as "' + copy.name + '".');
+    };
+    card.querySelector('[data-del]').onclick = async () => {
+      if (!confirm('Delete "' + p.name + '"?')) return;
+      try { if (store === Cloud && p.remote !== false) await Cloud.remove(p.id); } catch (e) { toast(e.message); }
+      Local.remove(p.id);
+      renderDashboard();
+    };
+    body.appendChild(card);
+  });
+}
+$('dashSearch').oninput = () => renderDashboard();
+$('dashSort').onchange = () => renderDashboard();
+$('dashLayout').addEventListener('click', e => {
+  const b = e.target.closest('[data-layout]'); if (!b) return;
+  dashLayout = b.dataset.layout;
+  document.querySelectorAll('#dashLayout .mode-opt').forEach(x => x.classList.toggle('active', x === b));
+  renderDashboard();
+});
+$('dashNew').onclick = () => { showView('editor'); $('btnNew').click(); };
+
+/* every save stores a thumbnail so the dashboard has something to show */
+const _saveProject = saveProject;
+saveProject = async function () {
+  try {
+    const shot = snapshotImage(360, 'jpeg');
+    if (shot.url) pendingThumb = shot.url;
+  } catch (e) { /* a thumbnail is never worth failing a save over */ }
+  return _saveProject.apply(this, arguments);
+};
+let pendingThumb = null;
+const _localPut = Local.put.bind(Local);
+Local.put = function (project) {
+  if (pendingThumb) { project.thumb = pendingThumb; pendingThumb = null; }
+  else if (!project.thumb) { const prev = readAll()[project.id]; if (prev && prev.thumb) project.thumb = prev.thumb; }
+  return _localPut(project);
+};
+
+/* ==================================================================== */
+/* 10e. PDF DIRECTIVE GENERATION                                        */
+/* ==================================================================== */
+/** Every product on the wall, grouped by SKU, with counts and dimensions. */
+function productManifest() {
+  const rows = new Map();
+  canvas.getObjects().filter(isProduct).forEach(o => {
+    const d = o.data || {};
+    const key = d.sku || d.name || nodeName(o);
+    const b = boundsOf(o);
+    if (!rows.has(key)) {
+      rows.set(key, { sku: d.sku || '—', name: d.name || nodeName(o), brand: d.brand || '—',
+                      colorway: d.colorway || '—', price: d.price || '', sizes: d.sizes || '',
+                      wCm: round1(cm(b.width)), hCm: round1(cm(b.height)), count: 0 });
+    }
+    rows.get(key).count++;
+  });
+  return [...rows.values()].sort((a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name));
+}
+
+async function generateDirectivePDF() {
+  if (!window.jspdf || !window.jspdf.jsPDF) { toast('The PDF library did not load — check the connection.'); return; }
+  const { jsPDF } = window.jspdf;
+  toast('Building the directive…');
+
+  const shot = snapshotImage(2000, 'jpeg');
+  if (!shot.url) { toast('Could not render the layout.'); return; }
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const W = 297, H = 210, M = 12;
+  const project = $('projectName').value || 'Untitled layout';
+  const version = 'v' + (new Date().toISOString().slice(0, 10));
+
+  const header = (title) => {
+    doc.setFillColor(23, 32, 43); doc.rect(0, 0, W, 18, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+    doc.text('MerchStudio · ' + title, M, 11.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+    doc.setTextColor(210, 215, 222);
+    doc.text(project + '   |   ' + ($('storeTier').value) + '   |   ' +
+             (mode === 'floor' ? 'Floor plan' : 'Wall elevation') + '   |   ' + version, W - M, 11.5, { align: 'right' });
+  };
+  const footer = (n, total) => {
+    doc.setDrawColor(215); doc.line(M, H - 10, W - M, H - 10);
+    doc.setFontSize(7.5); doc.setTextColor(120);
+    doc.text('Generated ' + new Date().toLocaleString(), M, H - 5.5);
+    doc.text('Page ' + n + ' of ' + total, W - M, H - 5.5, { align: 'right' });
+  };
+
+  /* ---- page 1: the layout ---- */
+  header('Store directive');
+  const ratio = shot.frame.width / shot.frame.height;
+  let iw = W - M * 2, ih = iw / ratio;
+  const maxH = H - 46;
+  if (ih > maxH) { ih = maxH; iw = ih * ratio; }
+  doc.addImage(shot.url, 'JPEG', (W - iw) / 2, 24, iw, ih, undefined, 'FAST');
+  doc.setTextColor(90); doc.setFontSize(8);
+  doc.text('Artboard ' + MODES[mode].boardCm.w + ' × ' + MODES[mode].boardCm.h + ' cm · drawn 1:1 in centimetres',
+           M, 24 + ih + 6);
+  const issuesLine = currentIssues.length
+    ? currentIssues.filter(i => i.level === 'error').length + ' error(s), ' +
+      currentIssues.filter(i => i.level === 'warn').length + ' warning(s) at export time'
+    : 'Validated: no capacity or placement issues';
+  doc.text(issuesLine, M, 24 + ih + 11);
+  footer(1, 2);
+
+  /* ---- page 2: the product manifest ---- */
+  doc.addPage();
+  header('Product list');
+  const rows = productManifest();
+  let y = 28;
+  const cols = [
+    { k: 'sku', label: 'SKU', x: M, w: 34 },
+    { k: 'name', label: 'Product', x: M + 34, w: 62 },
+    { k: 'brand', label: 'Brand', x: M + 96, w: 36 },
+    { k: 'colorway', label: 'Colourway', x: M + 132, w: 36 },
+    { k: 'sizes', label: 'Sizes', x: M + 168, w: 34 },
+    { k: 'dims', label: 'W × H (cm)', x: M + 202, w: 34 },
+    { k: 'count', label: 'Facings', x: M + 236, w: 20 },
+    { k: 'price', label: 'Price', x: M + 256, w: 20 }
+  ];
+  doc.setFillColor(240, 242, 245); doc.rect(M, y - 5, W - M * 2, 7, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(40);
+  cols.forEach(c => doc.text(c.label, c.x + 1, y));
+  y += 6;
+  doc.setFont('helvetica', 'normal');
+
+  let page = 2;
+  const totalPages = 2 + Math.max(0, Math.ceil((rows.length - 24) / 30));
+  rows.forEach((r, i) => {
+    if (y > H - 18) { footer(page, totalPages); doc.addPage(); page++; header('Product list (continued)'); y = 28; }
+    if (i % 2) { doc.setFillColor(248, 249, 251); doc.rect(M, y - 4.5, W - M * 2, 6, 'F'); }
+    doc.setTextColor(40); doc.setFontSize(7.5);
+    const cells = { sku: r.sku, name: r.name, brand: r.brand, colorway: r.colorway,
+                    sizes: r.sizes || '—', dims: r.wCm + ' × ' + r.hCm, count: String(r.count), price: r.price || '—' };
+    cols.forEach(c => doc.text(String(cells[c.k]).slice(0, 34), c.x + 1, y));
+    y += 6;
+  });
+  if (!rows.length) { doc.setTextColor(120); doc.text('No products placed on this layout yet.', M, y); }
+
+  doc.setDrawColor(215); doc.line(M, y + 4, W - M * 2 + M, y + 4);
+  doc.setFontSize(8); doc.setTextColor(90);
+  doc.text('Store sign-off:  ______________________     Date: ____________     Photo uploaded:  ☐',
+           M, y + 12);
+  footer(page, totalPages);
+
+  const name = project.replace(/\s+/g, '-').toLowerCase() + '-directive.pdf';
+  doc.save(name);
+  toast('Directive exported — ' + rows.length + ' product lines.');
+}
+$('btnPdf').onclick = () => generateDirectivePDF();
+
+/* ==================================================================== */
+/* 10f. SPLIT-SCREEN COMPLIANCE & PHOTO AUDIT                           */
+/* ==================================================================== */
+let auditPhoto = null, auditMode = 'split';
+const AUDIT_CHECKS = [
+  'Fixture heights match the guideline',
+  'Product sequence and colour blocking match',
+  'Facings count is correct',
+  'Signage, tags and pricing in place',
+  'Nothing damaged, folded or hanging incorrectly'
+];
+
+function openAudit() {
+  const shot = snapshotImage(1600, 'jpeg');
+  if (shot.url) $('cmpPlanImg').src = shot.url;
+  $('cmpSub').textContent = ($('projectName').value || 'Untitled layout') +
+    ' · ' + (mode === 'floor' ? 'floor plan' : 'wall elevation');
+  if (!$('cmpChecklist').children.length) {
+    AUDIT_CHECKS.forEach((text, i) => {
+      const row = document.createElement('label');
+      row.className = 'flex items-start gap-2 text-[11.5px] text-chalk cursor-pointer';
+      row.innerHTML = '<input type="checkbox" class="accent-brass mt-0.5" data-check="' + i + '" /><span>' + esc(text) + '</span>';
+      $('cmpChecklist').appendChild(row);
+    });
+  }
+  applyAuditMode();
+  renderAuditHistory();
+}
+$('cmpRefresh').onclick = () => { openAudit(); toast('Guideline re-rendered from the current layout.'); };
+
+/** split · overlay (blend) · swipe (clip) — three ways to read the same pair. */
+function applyAuditMode() {
+  const left = $('cmpLeftPane'), right = $('cmpRightPane'), v = parseInt($('cmpOpacity').value, 10);
+  left.style.cssText = ''; right.style.cssText = '';
+  left.className = 'flex-1 relative overflow-hidden';
+  right.className = 'flex-1 relative overflow-hidden';
+
+  if (auditMode === 'split') {
+    left.classList.add('border-r', 'border-hairline');
+  } else if (auditMode === 'overlay') {
+    left.style.cssText = 'position:absolute;inset:0;flex:none;';
+    right.style.cssText = 'position:absolute;inset:0;flex:none;opacity:' + (v / 100) + ';';
+  } else {                                            // swipe
+    left.style.cssText = 'position:absolute;inset:0;flex:none;';
+    right.style.cssText = 'position:absolute;inset:0;flex:none;clip-path:inset(0 0 0 ' + v + '%);';
+  }
+  $('cmpNoPhoto').style.display = auditPhoto ? 'none' : '';
+}
+$('cmpMode').addEventListener('click', e => {
+  const b = e.target.closest('[data-cmp]'); if (!b) return;
+  auditMode = b.dataset.cmp;
+  document.querySelectorAll('#cmpMode .mode-opt').forEach(x => x.classList.toggle('active', x === b));
+  applyAuditMode();
+});
+$('cmpOpacity').oninput = applyAuditMode;
+
+$('cmpAuditPhoto').onchange = e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  const r = new FileReader();
+  r.onerror = () => toast('That photo could not be read.');
+  r.onload = ev => downscale(ev.target.result, 1400, url => {
+    auditPhoto = url;
+    $('cmpStoreImg').src = url;
+    applyAuditMode();
+    toast('Store photo loaded — compare, then approve or send back.');
+  });
+  r.readAsDataURL(f);
+};
+
+function submitAudit(status) {
+  const store_ = ($('cmpAuditStore').value || '').trim();
+  if (!store_) { toast('Which store is this?'); return; }
+  const checks = [...$('cmpChecklist').querySelectorAll('input')].map((c, i) => ({ text: AUDIT_CHECKS[i], ok: c.checked }));
+  compliance.unshift({
+    store: store_, status: status, note: ($('cmpAuditNote').value || '').trim(),
+    photo: auditPhoto, checks: checks, ts: Date.now(),
+    passed: checks.filter(c => c.ok).length, total: checks.length
+  });
+  $('cmpAuditNote').value = '';
+  $('cmpChecklist').querySelectorAll('input').forEach(c => { c.checked = false; });
+  renderAuditHistory();
+  renderCompliance();
+  persistCompliance();
+  toast(status === 'approved' ? 'Execution approved.' : 'Sent back to the store for rework.');
+}
+$('cmpApprove').onclick = () => submitAudit('approved');
+$('cmpRework').onclick  = () => submitAudit('rework');
+
+function renderAuditHistory() {
+  const wrap = $('cmpAuditList');
+  wrap.innerHTML = compliance.length ? '' : '<p class="text-[11px] text-muted">No reviews yet.</p>';
+  compliance.slice(0, 12).forEach(c => {
+    const tone = { approved: '#3ecfb2', rework: '#ef6f6c', pending: '#e8b44a' }[c.status] || '#e8b44a';
+    const row = document.createElement('button');
+    row.className = 'w-full text-left flex gap-2 items-center rounded-lg border border-hairline bg-shell p-1.5 hover:border-brass';
+    row.innerHTML =
+      (c.photo ? '<img src="' + c.photo + '" class="w-10 h-10 rounded object-cover" alt="" />'
+               : '<div class="w-10 h-10 rounded bg-raise flex items-center justify-center text-muted"><i class="fa-solid fa-image text-[10px]"></i></div>') +
+      '<div class="flex-1 min-w-0"><div class="text-[11px] truncate">' + esc(c.store) + '</div>' +
+      '<div class="text-[9.5px]" style="color:' + tone + '">' + esc(c.status) +
+      (c.total ? ' · ' + c.passed + '/' + c.total + ' checks' : '') + '</div></div>';
+    row.onclick = () => {
+      if (c.photo) { auditPhoto = c.photo; $('cmpStoreImg').src = c.photo; applyAuditMode(); }
+      $('cmpAuditStore').value = c.store;
+      $('cmpAuditNote').value = c.note || '';
+      (c.checks || []).forEach((ck, i) => {
+        const box = $('cmpChecklist').querySelector('[data-check="' + i + '"]');
+        if (box) box.checked = !!ck.ok;
+      });
+    };
+    wrap.appendChild(row);
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* 8. BOOT                                                             */
 /* ------------------------------------------------------------------ */
 (function init() {
@@ -2905,6 +4820,10 @@ $('btnHelp').onclick = () => $('modalHelp').classList.add('open');
   history = []; hIndex = -1; pushHistory();
   refreshInspector();
   setTool('select');
+  applyStructureLock();
+  renderLayers();
+  showView('editor');
+  validateScene();
   $('inpWorkspace').value = workspaceId;
   initCloud();                                   // async: the editor is usable immediately
   setTimeout(() => toast('Upload your collection or drag a silhouette onto the wall to start.'), 600);
