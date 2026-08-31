@@ -16,6 +16,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1605,28 +1606,28 @@ function downscale(dataUrl, maxDim, cb) {
 function importImage(file, at) {
   const reader = new FileReader();
   reader.onerror = () => toast('That file could not be read.');
-  reader.onload = e => downscale(e.target.result, 1600, url => {
-    fabric.Image.fromURL(url, img => {
+  reader.onload = e => downscale(e.target.result, 1600, dataUrl => hostImage(dataUrl, 'canvas').then(url => {
+    imageFromURL(url, img => {
       const maxW = board.w * 0.45;
       if (img.width > maxW) img.scaleToWidth(maxW);
       img.set({ originX: 'center', originY: 'center', name: file.name, data: { kind: 'image', sku: '', brand: '' } });
       addObject(img, at);
       toast('Photo added — resize it from the corner handles.');
     });
-  });
+  }));
   reader.readAsDataURL(file);
 }
 
 function setBackground(file) {
   const reader = new FileReader();
   reader.onerror = () => toast('That file could not be read.');
-  reader.onload = e => downscale(e.target.result, 2000, url => {
-    fabric.Image.fromURL(url, img => {
+  reader.onload = e => downscale(e.target.result, 2000, dataUrl => hostImage(dataUrl, 'blueprints').then(url => {
+    imageFromURL(url, img => {
       img.set({ scaleX: board.w / img.width, scaleY: board.h / img.height, opacity: .55, selectable: false });
       canvas.setBackgroundImage(img, () => { canvas.requestRenderAll(); pushHistory(); });
       toast('Blueprint set as the artboard background.');
     });
-  });
+  }));
   reader.readAsDataURL(file);
 }
 
@@ -1639,8 +1640,16 @@ function setBackground(file) {
 const CATALOG_KEY = 'merchstudio.catalog.v1';
 const readCatalog  = () => { try { return JSON.parse(localStorage.getItem(CATALOG_KEY)) || []; } catch (e) { return []; } };
 function writeCatalog(list) {
-  try { localStorage.setItem(CATALOG_KEY, JSON.stringify(list)); return true; }
-  catch (e) { toast('Browser storage is full — remove a few products or an old project.'); return false; }
+  try {
+    localStorage.setItem(CATALOG_KEY, JSON.stringify(list));    // mirror: metadata + URLs
+  } catch (e) {
+    // only reachable while offline, when photos are still inline data URLs
+    toast('Browser storage is full. Connect to the cloud, or remove a few products.');
+    if (typeof pushCatalog === 'function') pushCatalog(list);
+    return false;
+  }
+  if (typeof pushCatalog === 'function') pushCatalog(list);
+  return true;
 }
 
 /**
@@ -1735,17 +1744,25 @@ function addFilesToCatalog(files) {
     r.onerror = () => { if (++done === list.length) renderCatalog(); };
     r.onload = ev => cleanProductImage(ev.target.result, cutout, 700, (src, w, h) => {
       thumbOf(src, thumb => {
-        const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 40);
-        const item = {
-          id: 'c' + Date.now() + Math.random().toString(36).slice(2, 6),
-          name: name, sku: '', brand: '', price: '', colorway: '', sizes: '',
-          wCm: guessWidthCm(name, h / Math.max(1, w)),
-          src: src, thumb: thumb, ts: Date.now()
-        };
-        const cat = readCatalog();
-        cat.unshift(item);
-        if (!writeCatalog(cat)) { /* quota — item dropped, message already shown */ }
-        if (++done === list.length) { renderCatalog(); toast('Collection updated.'); }
+        // photos go to Firebase Storage; only the URLs are kept in the catalogue
+        Promise.all([hostImage(src, 'catalog'), hostImage(thumb, 'catalog/thumbs')])
+          .then(([srcUrl, thumbUrl]) => {
+            const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 40);
+            const item = {
+              id: 'c' + Date.now() + Math.random().toString(36).slice(2, 6),
+              name: name, sku: '', brand: '', price: '', colorway: '', sizes: '',
+              wCm: guessWidthCm(name, h / Math.max(1, w)),
+              src: srcUrl, thumb: thumbUrl, hosted: isRemote(srcUrl), ts: Date.now()
+            };
+            const cat = readCatalog();
+            cat.unshift(item);
+            writeCatalog(cat);
+            if (++done === list.length) {
+              renderCatalog();
+              if (currentView === 'inventory') renderInventory();
+              toast(CloudFiles.ready() ? 'Uploaded to cloud storage.' : 'Saved locally — no cloud connection.');
+            }
+          });
       });
     });
     r.readAsDataURL(file);
@@ -1790,7 +1807,7 @@ function renderCatalog() {
 function placeCatalogItem(id, at) {
   const item = readCatalog().find(i => i.id === id);
   if (!item) { toast('That product is no longer in the library.'); return; }
-  fabric.Image.fromURL(item.src, img => {
+  imageFromURL(item.src, img => {
     img.set({ originX: 'center', originY: 'center', name: item.name || 'Product' });
     img.scaleToWidth(px(item.wCm || 35));
     img.data = {
@@ -2854,7 +2871,9 @@ function exportImage(format) {
     });
   } catch (err) {
     console.error('[MerchStudio] export failed:', err);
-    toast('The export failed — try hiding very large photos and export again.');
+    toast(/secur|taint/i.test(err.message || '')
+      ? 'Export blocked by image security. Apply the CORS rule from the setup notes to your Storage bucket.'
+      : 'The export failed — try hiding very large photos and export again.');
   }
 
   exporting = false;
@@ -2945,14 +2964,23 @@ const Local = {
   put(project) {
     const db = readAll();
     db[project.id] = project;
-    try { writeAll(db); }
-    catch (err) {
-      project.versions = (project.versions || []).slice(0, 3);
-      db[project.id] = project;
-      try { writeAll(db); toast('Storage was full — older versions were dropped.'); }
-      catch (e2) { throw new Error('Browser storage is full. Export the layout, then delete an old project.'); }
+    try { writeAll(db); return project; } catch (err) { /* fall through to pruning */ }
+
+    // The mirror is a convenience, never the system of record. Shed the heavy
+    // parts in order — thumbnails, then history — rather than refusing to save.
+    Object.values(db).forEach(p2 => { if (p2.id !== project.id) delete p2.thumb; });
+    try { writeAll(db); toast('Local cache trimmed — the cloud copy is complete.'); return project; } catch (e) {}
+
+    Object.values(db).forEach(p2 => { p2.versions = (p2.versions || []).slice(0, 2); });
+    try { writeAll(db); toast('Local cache trimmed — older local versions dropped.'); return project; } catch (e) {}
+
+    const onlyThis = {};
+    onlyThis[project.id] = Object.assign({}, project, { versions: [], thumb: null });
+    try { writeAll(onlyThis); toast('Local cache reset — everything is safe in the cloud.'); return project; }
+    catch (e) {
+      if (store === Cloud) { toast('Saved to the cloud; the local cache is full.'); return project; }
+      throw new Error('Browser storage is full and there is no cloud connection. Export the layout first.');
     }
-    return project;
   },
   remove(id) { const db = readAll(); delete db[id]; writeAll(db); },
   versions(id) { const p = this.get(id); return p ? (p.versions || []) : []; }
@@ -3071,6 +3099,7 @@ async function initCloud() {
     setCloudPill('busy', 'Connecting…');
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     cloud.db = firebase.firestore();
+    try { cloud.storage = firebase.storage(); } catch (e) { console.warn('[MerchStudio] Storage unavailable:', e); }
     try { await cloud.db.enablePersistence({ synchronizeTabs: true }); } catch (e) { /* multi-tab or unsupported */ }
     const cred = await firebase.auth().signInAnonymously();
     cloud.uid = cred.user.uid;
@@ -3078,6 +3107,7 @@ async function initCloud() {
     store = Cloud;
     setCloudPill('ok', workspaceId);
     $('projectsSub').textContent = 'Shared across every device signed into this workspace.';
+    pullCatalog();                                   // shared product photos
   } catch (err) {
     console.error('[MerchStudio] Firebase unavailable:', err);
     cloud.error = firebaseHint(err);
@@ -3090,6 +3120,70 @@ $('cloudPill').onclick = () => {
   toast(cloud.ready ? 'Saving to Firestore workspace "' + workspaceId + '".'
                     : 'Saving to this browser only. ' + (cloud.error || ''));
 };
+
+/* ==================================================================== */
+/* 7c. FILE HOSTING — Firebase Storage                                  */
+/*     Photos leave localStorage entirely: they are uploaded once and    */
+/*     the app carries a URL, which is what keeps projects small enough  */
+/*     for Firestore and keeps the browser quota out of the picture.     */
+/* ==================================================================== */
+const CloudFiles = {
+  ready() { return !!(cloud.ready && cloud.storage); },
+  async put(dataUrl, folder) {
+    const name = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    const path = 'workspaces/' + workspaceId + '/' + folder + '/' + name;
+    const ref = cloud.storage.ref().child(path);
+    const snap = await ref.putString(dataUrl, 'data_url');
+    return { url: await snap.ref.getDownloadURL(), path: path };
+  }
+};
+
+const isRemote = u => typeof u === 'string' && /^https?:\/\//.test(u);
+
+/**
+ * Upload an image and hand back its URL. If the cloud is not available the
+ * original data URL comes back, so the app still works offline — it just
+ * stores locally until the connection returns.
+ */
+async function hostImage(dataUrl, folder) {
+  if (!dataUrl || isRemote(dataUrl)) return dataUrl;
+  if (!CloudFiles.ready()) return dataUrl;
+  try {
+    const r = await CloudFiles.put(dataUrl, folder || 'uploads');
+    return r.url;
+  } catch (err) {
+    console.error('[MerchStudio] upload failed:', err);
+    toast('Upload failed, keeping this one local: ' + firebaseHint(err));
+    return dataUrl;
+  }
+}
+
+/** Fabric images need the CORS flag or the canvas taints and export breaks. */
+function imageFromURL(url, cb) {
+  fabric.Image.fromURL(url, cb, isRemote(url) ? { crossOrigin: 'anonymous' } : undefined);
+}
+
+/* ---- catalogue index in Firestore ---------------------------------------- */
+const catalogDoc = () => cloud.db.collection('workspaces').doc(workspaceId).collection('catalog').doc('index');
+
+async function pullCatalog() {
+  if (!cloud.ready) return;
+  try {
+    const doc = await catalogDoc().get();
+    if (!doc.exists) return;
+    const items = doc.data().items || [];
+    if (!items.length) return;
+    localStorage.setItem(CATALOG_KEY, JSON.stringify(items));   // small: URLs only
+    renderCatalog();
+    if (currentView === 'inventory') renderInventory();
+  } catch (err) { console.warn('[MerchStudio] catalog pull failed:', err); }
+}
+
+function pushCatalog(list) {
+  if (!cloud.ready) return;
+  catalogDoc().set({ items: list, updatedMs: Date.now() }, { merge: true })
+    .catch(err => console.warn('[MerchStudio] catalog push failed:', err));
+}
 
 /* ---- project operations -------------------------------------------------- */
 function currentStates() {
@@ -3232,7 +3326,7 @@ $('btnWorkspace').onclick = () => {
   if (!next) { toast('Give the workspace a name.'); return; }
   workspaceId = next;
   localStorage.setItem(WS_KEY, workspaceId);
-  if (cloud.ready) setCloudPill('ok', workspaceId);
+  if (cloud.ready) { setCloudPill('ok', workspaceId); pullCatalog(); }
   renderProjects();
   toast('Workspace switched to "' + workspaceId + '".');
 };
@@ -3287,7 +3381,8 @@ $('cmpPhoto').onchange = e => {
   $('cmpPhotoLabel').textContent = 'Reading…';
   const r = new FileReader();
   r.onerror = () => { cmpPhotoBusy = false; cmpPendingAdd = false; $('cmpPhotoLabel').textContent = 'Choose file'; toast('That photo could not be read.'); };
-  r.onload = ev => downscale(ev.target.result, 1000, url => setCmpPhoto(url, f.name));
+  r.onload = ev => downscale(ev.target.result, 1000, dataUrl =>
+    hostImage(dataUrl, 'reports').then(url => setCmpPhoto(url, f.name)));
   r.readAsDataURL(f);                        // -> base64 string, safe for storage
 };
 $('cmpClearPhoto').onclick = () => setCmpPhoto(null, '');
@@ -3984,7 +4079,7 @@ function swapSelection(catalogId, keepSize) {
   const made = [];
   canvas.renderOnAddRemove = false;
   targets.forEach(old => {
-    fabric.Image.fromURL(item.src, img => {
+    imageFromURL(item.src, img => {
       const ob = boundsOf(old);
       img.set({ originX: 'center', originY: 'center', angle: old.angle || 0, name: item.name || 'Product' });
       if (keepSize) img.scaleToWidth(ob.width);
@@ -4287,7 +4382,7 @@ function packOntoShelf(shelf, sorted, facings, gap, even) {
   let x = startX, pending = queue.length;
   const made = [];
   queue.forEach(q => {
-    fabric.Image.fromURL(q.item.src, img => {
+    imageFromURL(q.item.src, img => {
       img.set({ originX: 'center', originY: 'center', name: q.item.name || 'Product' });
       img.scaleToWidth(q.w);
       img.set({ left: 0, top: 0 });
@@ -4977,12 +5072,12 @@ $('cmpAuditPhoto').onchange = e => {
   if (!f) return;
   const r = new FileReader();
   r.onerror = () => toast('ფოტოს წაკითხვა ვერ მოხერხდა.');
-  r.onload = ev => downscale(ev.target.result, 1400, url => {
+  r.onload = ev => downscale(ev.target.result, 1400, dataUrl => hostImage(dataUrl, 'audits').then(url => {
     auditPhoto = url;
     $('cmpStoreImg').src = url;
     applyAuditMode();
     toast('ფოტო ატვირთულია — შეადარეთ და დაამტკიცეთ ან დააბრუნეთ.');
-  });
+  }));
   r.readAsDataURL(f);
 };
 
@@ -5303,7 +5398,9 @@ function importFloorPlan() {
 const texCache = new Map();
 function textureFor(url) {
   if (texCache.has(url)) return texCache.get(url);
-  const tex = new THREE.TextureLoader().load(url, () => { if (T3.ready) T3.renderer.render(T3.scene, T3.camera); });
+  const loader = new THREE.TextureLoader();
+  if (/^https?:\/\//.test(url)) loader.setCrossOrigin('anonymous');
+  const tex = loader.load(url, () => { if (T3.ready) T3.renderer.render(T3.scene, T3.camera); });
   if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
   texCache.set(url, tex);
   return tex;
@@ -5909,7 +6006,8 @@ $('threeTexFile').onchange = e => {
   const r = new FileReader();
   r.onerror = () => toast('That photo could not be read.');
   // 640 px is plenty for a texture and keeps the saved project small
-  r.onload = ev => downscale(ev.target.result, 640, url => applyTexture(url));
+  r.onload = ev => downscale(ev.target.result, 640, dataUrl =>
+    hostImage(dataUrl, 'textures').then(url => applyTexture(url)));
   r.readAsDataURL(f);
 };
 
